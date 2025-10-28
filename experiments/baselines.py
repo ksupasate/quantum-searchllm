@@ -37,7 +37,13 @@ class GreedyDecoder:
     ):
         self.model = model
         self.tokenizer = tokenizer
-        self.device = device or model.device
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            if hasattr(model, "device") and isinstance(model.device, torch.device):
+                self.device = model.device
+            else:
+                self.device = model.get_input_embeddings().weight.device
         self.model.eval()
 
     def generate(
@@ -89,7 +95,13 @@ class StandardBeamSearch:
         self.model = model
         self.tokenizer = tokenizer
         self.beam_width = beam_width
-        self.device = device or model.device
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            if hasattr(model, "device") and isinstance(model.device, torch.device):
+                self.device = model.device
+            else:
+                self.device = model.get_input_embeddings().weight.device
         self.model.eval()
 
     def generate(
@@ -144,7 +156,13 @@ class SelfConsistency:
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.temperature = temperature
-        self.device = device or model.device
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            if hasattr(model, "device") and isinstance(model.device, torch.device):
+                self.device = model.device
+            else:
+                self.device = model.get_input_embeddings().weight.device
         self.model.eval()
 
     def generate(

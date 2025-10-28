@@ -152,22 +152,25 @@ class FidelityGuidedBeamSearcher:
         self.temperature = temperature
         self.normalize_embeddings = normalize_embeddings
 
-        if device is None:
-            self.device = get_device(prefer_gpu=True)
-        else:
-            self.device = torch.device(device)
+        self._is_quantized = bool(
+            getattr(self.model, "is_loaded_in_8bit", False)
+            or getattr(self.model, "is_loaded_in_4bit", False)
+        )
 
-        self._is_quantized = False
-        try:
-            self.model = self.model.to(self.device)
-        except RuntimeError as exc:
-            message = str(exc)
-            if "8-bit" in message or "4-bit" in message:
-                self._is_quantized = True
+        if device is None:
+            if self._is_quantized:
                 embed_weight = self.model.get_input_embeddings().weight
                 self.device = torch.device(embed_weight.device)
             else:
-                raise
+                self.device = get_device(prefer_gpu=True)
+        else:
+            self.device = torch.device(device)
+
+        if not self._is_quantized:
+            self.model = self.model.to(self.device)
+        else:
+            embed_weight = self.model.get_input_embeddings().weight
+            self.device = torch.device(embed_weight.device)
         self.model.eval()  # Inference mode
 
         # Extract embedding layer for MPS construction

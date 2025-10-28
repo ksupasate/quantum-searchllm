@@ -28,7 +28,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from datasets import Dataset, load_dataset
 from tqdm import tqdm
 try:  # pragma: no cover
@@ -259,10 +259,21 @@ def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Loading model: {model_config['name']}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_config['name'])
+
+    quant_config = None
+    if model_config.get('load_in_8bit', False):
+        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+
+    model_kwargs = {
+        'torch_dtype': getattr(torch, model_config['torch_dtype']),
+        'quantization_config': quant_config,
+    }
+    if quant_config is not None:
+        model_kwargs['device_map'] = 'auto'
+
     model = AutoModelForCausalLM.from_pretrained(
         model_config['name'],
-        torch_dtype=getattr(torch, model_config['torch_dtype']),
-        load_in_8bit=model_config['load_in_8bit'],
+        **model_kwargs,
     )
 
     if tokenizer.pad_token is None:

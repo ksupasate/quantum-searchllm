@@ -39,7 +39,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from datasets import load_dataset
 from tqdm import tqdm
 try:  # pragma: no cover
@@ -97,13 +97,18 @@ def load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     dtype = _resolve_dtype(torch_dtype_name)
+    quantization_config = None
+    if load_in_8bit:
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+
     load_kwargs: Dict[str, Any] = {
         'torch_dtype': dtype,
         'low_cpu_mem_usage': True,
     }
 
-    if load_in_8bit:
-        load_kwargs['load_in_8bit'] = True
+    if quantization_config is not None:
+        load_kwargs['quantization_config'] = quantization_config
+        load_kwargs['device_map'] = 'auto'
 
     if device is not None:
         load_kwargs['device_map'] = device
@@ -122,6 +127,10 @@ def load_model_and_tokenizer(
                 'device_map': 'cpu',
                 'low_cpu_mem_usage': True,
             }
+            if load_in_8bit:
+                fallback_cfg = BitsAndBytesConfig(load_in_8bit=True)
+                fallback_kwargs['quantization_config'] = fallback_cfg
+                fallback_kwargs['device_map'] = 'auto'
             model = AutoModelForCausalLM.from_pretrained(model_name, **fallback_kwargs)
         else:
             raise
