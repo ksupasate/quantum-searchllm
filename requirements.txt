@@ -1,0 +1,36 @@
+# Core Deep Learning Framework
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# LLM Integration
+transformers>=4.40.0
+accelerate>=0.28.0
+sentencepiece>=0.2.0
+protobuf>=3.20.0
+
+# Configuration Management
+pyyaml>=6.0
+
+# Testing Framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Data Processing
+datasets>=2.14.0
+pandas>=2.0.0
+
+# Visualization & Analysis (for notebooks)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# Logging
+loguru>=0.7.0
+
+# Type Checking (development)
+mypy>=1.4.0

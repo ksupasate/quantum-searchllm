@@ -1,0 +1,157 @@
+# TNAD (Tensor Network-Augmented Decoding) Configuration
+# Default hyperparameters for Fidelity-Guided Beam Search
+
+# Model Configuration
+model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"  # HuggingFace model identifier (Mistral 7B, fully open)
+  # Alternatives: "microsoft/phi-2", "meta-llama/Llama-3.1-8B-Instruct", "google/gemma-2-2b-it", "gpt2"
+  device: "auto"  # "auto", "cuda", "cpu", "mps"
+  load_in_8bit: false  # Use 8-bit quantization for memory efficiency
+  torch_dtype: "float16"  # "float32", "float16", "bfloat16" - float16 for efficiency
+
+# FGBS Algorithm Parameters
+fgbs:
+  beam_width: 5  # Number of parallel beams (B)
+  # Typical values: 3-10. Higher = better quality but slower
+
+  alpha: 0.5  # Fluency vs coherence balance ∈ [0, 1]
+  # α = 1.0: Pure LLM probability (standard beam search)
+  # α = 0.5: Balanced (recommended)
+  # α = 0.3: Prioritize coherence (good for reasoning)
+  # α = 0.7: Prioritize fluency (good for creative writing)
+
+  bond_dim: 16  # MPS bond dimension (χ)
+  # Typical values: 8-32
+  # Smaller χ: Faster but limited logical tracking
+  # Larger χ: Slower but better coherence monitoring
+
+  top_k: 50  # Number of top tokens to consider per beam
+  temperature: 1.0  # Sampling temperature (1.0 = no scaling)
+
+  normalize_embeddings: true  # L2-normalize token embeddings in MPS
+
+# Generation Parameters
+generation:
+  max_length: 512  # Maximum generation length (tokens)
+  min_length: 10  # Minimum length before allowing EOS
+  show_progress: true  # Display progress bar during generation
+  return_details: false  # Return detailed generation info (beams, trajectories)
+
+# Experimental Setup
+experiment:
+  # Random seed for reproducibility
+  seed: 42
+
+  # Batch size for evaluation (not for generation, which is sequential)
+  eval_batch_size: 1
+
+  # Number of examples to evaluate (-1 for all)
+  num_examples: -1
+
+  # Save results
+  save_results: true
+  results_dir: "./results"
+
+  # Logging
+  log_level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+  log_file: null  # Path to log file (null = console only)
+
+# Dataset Configuration (for experiments)
+dataset:
+  name: "gsm8k"  # "gsm8k", "strategyqa", "entailmentbank"
+  split: "test"  # "train", "validation", "test"
+  shuffle: false
+
+  # GSM8K specific
+  gsm8k:
+    prompt_template: "Q: {question}\nA: Let's think step by step."
+    extract_answer_regex: "#### (\\d+)"
+
+  # StrategyQA specific
+  strategyqa:
+    prompt_template: "Question: {question}\nAnswer (yes/no):"
+    expected_answers: ["yes", "no"]
+    hub_ids:
+      - "wics/strategy-qa"
+      - "wics/strategyqa"
+      - "strategy_qa"
+    local_path: "data/strategyqa_sample.jsonl"
+
+# Coherence Metrics Configuration
+coherence_metrics:
+  # Compute additional coherence metrics
+  compute_negation_invariance: true
+  compute_transitivity_violations: false  # Requires special evaluation setup
+  compute_step_entailment: false  # Requires NLI model
+
+  # Fidelity score tracking
+  track_cfs_trajectory: true  # Save CFS at each generation step
+
+# Ablation Study Configuration
+ablation:
+  # Alpha sweep
+  alpha_values: [0.0, 0.3, 0.5, 0.7, 1.0]
+
+  # Bond dimension sweep
+  bond_dim_values: [4, 8, 16, 32]
+
+  # Beam width sweep
+  beam_width_values: [1, 3, 5, 10]
+
+  # Number of examples per configuration
+  examples_per_config: 100
+
+# Baseline Comparison
+baselines:
+  # Compare against these methods
+  compare_greedy: true  # Greedy decoding
+  compare_beam_search: true  # Standard beam search (α=1)
+  compare_self_consistency: false  # Self-consistency (expensive)
+
+  # Self-consistency parameters
+  self_consistency:
+    num_samples: 10  # Number of samples to generate
+    temperature: 0.7
+
+# Visualization (for notebooks)
+visualization:
+  plot_cfs_trajectory: true
+  plot_score_trajectory: true
+  plot_schmidt_spectrum: false  # Requires saving MPS states
+
+  # Plot styling
+  figure_size: [10, 6]
+  style: "seaborn-v0_8"  # matplotlib style
+  save_plots: true
+  plots_dir: "./plots"
+
+# Performance Optimization
+optimization:
+  # Use gradient checkpointing to save memory
+  use_gradient_checkpointing: false
+
+  # Compile model with torch.compile (PyTorch 2.0+)
+  use_torch_compile: false
+
+  # Mixed precision training
+  use_mixed_precision: false
+
+  # Number of threads for CPU
+  num_threads: 4
+
+# Advanced Settings
+advanced:
+  # MPS construction
+  mps:
+    svd_truncation_threshold: null  # Optional threshold for SVD truncation
+    use_randomized_svd: false  # Use randomized SVD for speed
+
+  # Numerical stability
+  numerical:
+    epsilon: 1.0e-10  # Small constant for numerical stability
+    log_epsilon: 1.0e-10  # Epsilon for log operations
+
+  # Caching
+  cache:
+    cache_embeddings: false  # Cache token embeddings (uses more memory)
+    cache_mps_states: false  # Cache MPS states for analysis

@@ -1,0 +1,5 @@
+{"id": "local-0", "question": "Is water typically wet?", "answer": true, "facts": ["Water is a liquid at room temperature."]}
+{"id": "local-1", "question": "Does the moon orbit Mars?", "answer": false, "facts": ["The Moon orbits Earth."]}
+{"id": "local-2", "question": "Is chocolate made from cocoa beans?", "answer": true, "facts": ["Chocolate is produced from processed cocoa beans."]}
+{"id": "local-3", "question": "Is two plus five equal to ten?", "answer": false, "facts": ["Two plus five equals seven."]}
+{"id": "local-4", "question": "Do birds usually have wings?", "answer": true, "facts": ["Most birds have wings which enable flight."]}
