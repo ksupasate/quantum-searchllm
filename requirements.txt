@@ -7,7 +7,7 @@ scipy>=1.10.0
 transformers>=4.40.0
 accelerate>=0.28.0
 sentencepiece>=0.2.0
-protobuf>=3.20.0
+protobuf>=3.20.0,<4.0
 
 # Configuration Management
 pyyaml>=6.0

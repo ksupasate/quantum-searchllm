@@ -60,8 +60,16 @@ except ImportError:  # pragma: no cover
 # Import all experiment modules
 from baselines import GreedyDecoder, StandardBeamSearch, SelfConsistency
 from coherence_metrics import run_coherence_evaluation
-from run_gsm8k import run_gsm8k_experiment, extract_answer_from_text as extract_gsm8k_answer
-from run_strategyqa import run_strategyqa_experiment, extract_yes_no_answer
+from run_gsm8k import (
+    run_gsm8k_experiment,
+    run_gsm8k_self_consistency_experiment,
+    extract_answer_from_text as extract_gsm8k_answer,
+)
+from run_strategyqa import (
+    run_strategyqa_experiment,
+    run_strategyqa_self_consistency_experiment,
+    extract_yes_no_answer,
+)
 
 from tnad import FidelityGuidedBeamSearcher
 from tnad.utils import setup_logger, get_device
@@ -102,7 +110,7 @@ def load_model_and_tokenizer(
         quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     load_kwargs: Dict[str, Any] = {
-        'torch_dtype': dtype,
+        'dtype': dtype,
         'low_cpu_mem_usage': True,
     }
 
@@ -123,7 +131,7 @@ def load_model_and_tokenizer(
                 exc.__class__.__name__,
             )
             fallback_kwargs = {
-                'torch_dtype': torch.float32,
+                'dtype': torch.float32,
                 'device_map': 'cpu',
                 'low_cpu_mem_usage': True,
             }
@@ -211,10 +219,15 @@ def run_single_benchmark_all_methods(
 
     # 3. Self-Consistency (N=10)
     logger.info("Running Self-Consistency (N=10)...")
-    # Note: Self-consistency requires sampling, implemented separately
-    # For now, we'll note it requires a different runner
-    logger.info("Self-Consistency requires sampling - skipping for now")
-    results['self_consistency'] = {'note': 'Requires separate implementation with sampling'}
+    sc_config = config.copy()
+
+    if benchmark_name == 'gsm8k':
+        results['self_consistency'] = run_gsm8k_self_consistency_experiment(sc_config)
+    elif benchmark_name == 'strategyqa':
+        results['self_consistency'] = run_strategyqa_self_consistency_experiment(sc_config)
+    else:
+        logger.info("Self-Consistency runner not implemented for this benchmark.")
+        results['self_consistency'] = {'note': 'Self-Consistency not implemented for this benchmark'}
 
     # 4. FGBS (Our Method)
     logger.info(f"Running FGBS (α={config['fgbs']['alpha']}, χ={config['fgbs']['bond_dim']})...")

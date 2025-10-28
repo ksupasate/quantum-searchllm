@@ -48,6 +48,7 @@ except ImportError:  # pragma: no cover
 
 from tnad import FidelityGuidedBeamSearcher
 from tnad.utils import get_device, setup_logger
+from experiments.baselines import SelfConsistency
 
 
 def _load_strategyqa_local(path: Path) -> Dataset:
@@ -231,30 +232,16 @@ def evaluate_single_example(
     return eval_result
 
 
-def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Run complete StrategyQA benchmark experiment.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Experiment results with metrics and predictions
-    """
-    logger.info("Starting StrategyQA experiment")
-
-    # Load dataset
+def _load_strategyqa_resources(config: Dict[str, Any]):
     logger.info("Loading StrategyQA dataset")
     dataset = load_strategyqa_dataset(config)
 
-    # Limit number of examples if specified
     num_examples = config['experiment']['num_examples']
     if num_examples > 0:
         dataset = dataset.select(range(min(num_examples, len(dataset))))
 
     logger.info(f"Evaluating on {len(dataset)} examples")
 
-    # Load model and tokenizer
     model_config = config['model']
     logger.info(f"Loading model: {model_config['name']}")
 
@@ -265,7 +252,7 @@ def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
         quant_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model_kwargs = {
-        'torch_dtype': getattr(torch, model_config['torch_dtype']),
+        'dtype': getattr(torch, model_config['torch_dtype']),
         'quantization_config': quant_config,
     }
     if quant_config is not None:
@@ -279,13 +266,21 @@ def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Setup device
     if model_config['device'] == 'auto':
         device = get_device(prefer_gpu=True)
     else:
         device = torch.device(model_config['device'])
 
     logger.info(f"Using device: {device}")
+
+    return dataset, model, tokenizer, device
+
+
+def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Run complete StrategyQA benchmark experiment."""
+    logger.info("Starting StrategyQA experiment")
+
+    dataset, model, tokenizer, device = _load_strategyqa_resources(config)
 
     # Initialize FGBS
     fgbs_config = config['fgbs']
@@ -363,6 +358,113 @@ def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Experiment complete!")
     logger.info(f"Final Accuracy: {accuracy:.2%} ({correct_count}/{len(results)})")
     logger.info(f"Average CFS: {np.exp(avg_final_cfs):.2f}")
+
+    return experiment_results
+
+
+def run_strategyqa_self_consistency_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Run StrategyQA evaluation with the self-consistency baseline."""
+    logger.info("Starting StrategyQA self-consistency experiment")
+
+    dataset, model, tokenizer, device = _load_strategyqa_resources(config)
+
+    sc_cfg = config.get('baselines', {}).get('self_consistency', {})
+    num_samples = sc_cfg.get('num_samples', 10)
+    temperature = sc_cfg.get('temperature', 0.7)
+
+    decoder = SelfConsistency(
+        model=model,
+        tokenizer=tokenizer,
+        num_samples=num_samples,
+        temperature=temperature,
+        device=str(device),
+    )
+
+    prompt_template = config['dataset']['strategyqa']['prompt_template']
+    gen_config = config['generation']
+
+    results: List[Dict[str, Any]] = []
+    correct = 0
+
+    for idx, example in enumerate(tqdm(dataset, desc="Evaluating StrategyQA (Self-Consistency)")):
+        question = example['question']
+        ground_truth = example['answer']
+        if isinstance(ground_truth, str):
+            ground_truth_bool = ground_truth.strip().lower() in {'yes', 'true', '1'}
+        else:
+            ground_truth_bool = bool(ground_truth)
+
+        prompt = format_prompt(question, prompt_template)
+
+        try:
+            sc_result = decoder.generate(
+                prompt,
+                max_length=gen_config['max_length'],
+                min_length=gen_config['min_length'],
+                show_progress=False,
+                answer_extractor=extract_yes_no_answer,
+            )
+        except Exception as exc:
+            logger.error(f"Self-consistency generation failed for example {idx}: {exc}")
+            results.append({
+                'example_id': idx,
+                'question': question,
+                'prompt': prompt,
+                'generated_text': "",
+                'predicted_answer': None,
+                'ground_truth_answer': ground_truth_bool,
+                'correct': False,
+                'error': str(exc),
+            })
+            continue
+
+        majority_answer = sc_result.get('majority_answer')
+        if isinstance(majority_answer, str):
+            predicted_bool = majority_answer.strip().lower() == 'yes'
+        else:
+            predicted_bool = bool(majority_answer) if majority_answer is not None else None
+
+        correct_flag = predicted_bool == ground_truth_bool if predicted_bool is not None else False
+        if correct_flag:
+            correct += 1
+
+        results.append({
+            'example_id': idx,
+            'question': question,
+            'prompt': prompt,
+            'generated_text': sc_result.get('text', ""),
+            'predicted_answer': predicted_bool,
+            'ground_truth_answer': ground_truth_bool,
+            'correct': correct_flag,
+            'all_samples': sc_result.get('all_samples', []),
+            'all_answers': sc_result.get('all_answers'),
+            'confidence': sc_result.get('confidence'),
+            'answer_counts': sc_result.get('answer_counts'),
+            'method': sc_result.get('method'),
+        })
+
+    accuracy = correct / len(results) if results else 0.0
+
+    experiment_results = {
+        'config': config,
+        'dataset': {
+            'name': 'strategyqa',
+            'split': config['dataset']['split'],
+            'num_examples': len(results),
+        },
+        'metrics': {
+            'accuracy': accuracy,
+            'correct_count': correct,
+            'total_count': len(results),
+        },
+        'predictions': results,
+        'timestamp': datetime.now().isoformat(),
+    }
+
+    logger.info(
+        f"Self-consistency experiment complete! Accuracy: {accuracy:.2%} "
+        f"({correct}/{len(results)})"
+    )
 
     return experiment_results
 

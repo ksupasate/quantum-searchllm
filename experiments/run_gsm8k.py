@@ -35,6 +35,7 @@ from loguru import logger
 
 from tnad import FidelityGuidedBeamSearcher
 from tnad.utils import setup_logger, get_device
+from experiments.baselines import SelfConsistency
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -156,35 +157,17 @@ def evaluate_single_example(
     return eval_result
 
 
-def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Run complete GSM8K benchmark experiment.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Experiment results with metrics and predictions
-    """
-    logger.info("Starting GSM8K experiment")
-
-    # Load dataset
+def _load_gsm8k_dataset(config: Dict[str, Any]):
     logger.info("Loading GSM8K dataset")
-    try:
-        dataset = load_dataset("gsm8k", "main", split=config['dataset']['split'])
-    except Exception as e:
-        logger.error(f"Failed to load GSM8K dataset: {e}")
-        logger.info("Please install: pip install datasets")
-        raise
-
-    # Limit number of examples if specified
+    dataset = load_dataset("gsm8k", "main", split=config['dataset']['split'])
     num_examples = config['experiment']['num_examples']
     if num_examples > 0:
         dataset = dataset.select(range(min(num_examples, len(dataset))))
-
     logger.info(f"Evaluating on {len(dataset)} examples")
+    return dataset
 
-    # Load model and tokenizer
+
+def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
     model_config = config['model']
     logger.info(f"Loading model: {model_config['name']}")
 
@@ -195,7 +178,7 @@ def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
         quant_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model_kwargs = {
-        'torch_dtype': getattr(torch, model_config['torch_dtype']),
+        'dtype': getattr(torch, model_config['torch_dtype']),
         'quantization_config': quant_config,
     }
     if quant_config is not None:
@@ -206,17 +189,25 @@ def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
         **model_kwargs,
     )
 
-    # Set padding token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Setup device
     if model_config['device'] == 'auto':
         device = get_device(prefer_gpu=True)
     else:
         device = torch.device(model_config['device'])
 
     logger.info(f"Using device: {device}")
+
+    return model, tokenizer, device
+
+
+def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Run complete GSM8K benchmark experiment with FGBS."""
+    logger.info("Starting GSM8K experiment")
+
+    dataset = _load_gsm8k_dataset(config)
+    model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
 
     # Initialize FGBS
     fgbs_config = config['fgbs']
@@ -298,6 +289,111 @@ def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Experiment complete!")
     logger.info(f"Final Accuracy: {accuracy:.2%} ({correct_count}/{len(results)})")
     logger.info(f"Average CFS: {np.exp(avg_final_cfs):.2f}")
+
+    return experiment_results
+
+
+def run_gsm8k_self_consistency_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Run GSM8K with the self-consistency baseline."""
+    logger.info("Starting GSM8K self-consistency experiment")
+
+    dataset = _load_gsm8k_dataset(config)
+    model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
+
+    sc_cfg = config.get('baselines', {}).get('self_consistency', {})
+    num_samples = sc_cfg.get('num_samples', 10)
+    temperature = sc_cfg.get('temperature', 0.7)
+
+    decoder = SelfConsistency(
+        model=model,
+        tokenizer=tokenizer,
+        num_samples=num_samples,
+        temperature=temperature,
+        device=str(device),
+    )
+
+    prompt_template = config['dataset']['gsm8k']['prompt_template']
+    extract_regex = config['dataset']['gsm8k']['extract_answer_regex']
+    gen_config = config['generation']
+
+    results: List[Dict[str, Any]] = []
+    correct = 0
+
+    for idx, example in enumerate(tqdm(dataset, desc="Evaluating GSM8K (Self-Consistency)")):
+        question = example['question']
+        answer_text = example['answer']
+        ground_truth = extract_answer_from_text(answer_text)
+
+        if ground_truth is None:
+            logger.warning(f"Could not extract ground truth for example {idx}")
+            continue
+
+        prompt = format_prompt(question, prompt_template)
+
+        try:
+            sc_result = decoder.generate(
+                prompt,
+                max_length=gen_config['max_length'],
+                min_length=gen_config['min_length'],
+                show_progress=False,
+                answer_extractor=lambda text: extract_answer_from_text(text, extract_regex),
+            )
+        except Exception as exc:
+            logger.error(f"Self-consistency generation failed for example {idx}: {exc}")
+            results.append({
+                'example_id': idx,
+                'question': question,
+                'prompt': prompt,
+                'generated_text': "",
+                'predicted_answer': None,
+                'ground_truth_answer': ground_truth,
+                'correct': False,
+                'error': str(exc),
+            })
+            continue
+
+        predicted = sc_result.get('majority_answer')
+        correct_flag = predicted == ground_truth
+        if correct_flag:
+            correct += 1
+
+        results.append({
+            'example_id': idx,
+            'question': question,
+            'prompt': prompt,
+            'generated_text': sc_result.get('text', ""),
+            'predicted_answer': predicted,
+            'ground_truth_answer': ground_truth,
+            'correct': correct_flag,
+            'all_samples': sc_result.get('all_samples', []),
+            'all_answers': sc_result.get('all_answers'),
+            'confidence': sc_result.get('confidence'),
+            'answer_counts': sc_result.get('answer_counts'),
+            'method': sc_result.get('method'),
+        })
+
+    accuracy = correct / len(results) if results else 0.0
+
+    experiment_results = {
+        'config': config,
+        'dataset': {
+            'name': 'gsm8k',
+            'split': config['dataset']['split'],
+            'num_examples': len(results),
+        },
+        'metrics': {
+            'accuracy': accuracy,
+            'correct_count': correct,
+            'total_count': len(results),
+        },
+        'predictions': results,
+        'timestamp': datetime.now().isoformat(),
+    }
+
+    logger.info(
+        f"Self-consistency experiment complete! Accuracy: {accuracy:.2%} "
+        f"({correct}/{len(results)})"
+    )
 
     return experiment_results
 
