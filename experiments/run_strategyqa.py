@@ -276,11 +276,30 @@ def _load_strategyqa_resources(config: Dict[str, Any]):
     return dataset, model, tokenizer, device
 
 
-def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Run complete StrategyQA benchmark experiment."""
+def run_strategyqa_experiment(
+    config: Dict[str, Any],
+    model: Optional[Any] = None,
+    tokenizer: Optional[Any] = None,
+    device: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Run complete StrategyQA benchmark experiment.
+
+    Args:
+        config: Configuration dictionary
+        model: Optional pre-loaded model (if None, will load from config)
+        tokenizer: Optional pre-loaded tokenizer (if None, will load from config)
+        device: Optional device (if None, will infer from config)
+    """
     logger.info("Starting StrategyQA experiment")
 
-    dataset, model, tokenizer, device = _load_strategyqa_resources(config)
+    # Load dataset
+    dataset = load_strategyqa_dataset(config)
+
+    # Use provided model/tokenizer or load new ones
+    if model is None or tokenizer is None or device is None:
+        dataset, model, tokenizer, device = _load_strategyqa_resources(config)
+    else:
+        logger.info("Using provided model and tokenizer (shared across experiments)")
 
     # Initialize FGBS
     fgbs_config = config['fgbs']
@@ -367,11 +386,30 @@ def run_strategyqa_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     return experiment_results
 
 
-def run_strategyqa_self_consistency_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Run StrategyQA evaluation with the self-consistency baseline."""
+def run_strategyqa_self_consistency_experiment(
+    config: Dict[str, Any],
+    model: Optional[Any] = None,
+    tokenizer: Optional[Any] = None,
+    device: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Run StrategyQA evaluation with the self-consistency baseline.
+
+    Args:
+        config: Configuration dictionary
+        model: Optional pre-loaded model (if None, will load from config)
+        tokenizer: Optional pre-loaded tokenizer (if None, will load from config)
+        device: Optional device (if None, will infer from config)
+    """
     logger.info("Starting StrategyQA self-consistency experiment")
 
-    dataset, model, tokenizer, device = _load_strategyqa_resources(config)
+    # Load dataset
+    dataset = load_strategyqa_dataset(config)
+
+    # Use provided model/tokenizer or load new ones
+    if model is None or tokenizer is None or device is None:
+        dataset, model, tokenizer, device = _load_strategyqa_resources(config)
+    else:
+        logger.info("Using provided model and tokenizer (shared across experiments)")
 
     sc_cfg = config.get('baselines', {}).get('self_consistency', {})
     num_samples = sc_cfg.get('num_samples', 10)

@@ -194,11 +194,11 @@ def run_single_benchmark_all_methods(
         # For simplicity, we'll run with FGBS but α=1, B=1 (equivalent to greedy)
         greedy_config['fgbs']['beam_width'] = 1
         greedy_config['fgbs']['alpha'] = 1.0
-        results['greedy'] = run_gsm8k_experiment(greedy_config)
+        results['greedy'] = run_gsm8k_experiment(greedy_config, model, tokenizer, device)
     elif benchmark_name == 'strategyqa':
         greedy_config['fgbs']['beam_width'] = 1
         greedy_config['fgbs']['alpha'] = 1.0
-        results['greedy'] = run_strategyqa_experiment(greedy_config)
+        results['greedy'] = run_strategyqa_experiment(greedy_config, model, tokenizer, device)
 
     # Clear GPU memory after greedy decoding
     if torch.cuda.is_available():
@@ -222,9 +222,9 @@ def run_single_benchmark_all_methods(
     }
 
     if benchmark_name == 'gsm8k':
-        results['beam_search'] = run_gsm8k_experiment(beam_config)
+        results['beam_search'] = run_gsm8k_experiment(beam_config, model, tokenizer, device)
     elif benchmark_name == 'strategyqa':
-        results['beam_search'] = run_strategyqa_experiment(beam_config)
+        results['beam_search'] = run_strategyqa_experiment(beam_config, model, tokenizer, device)
 
     # Clear GPU memory after beam search
     if torch.cuda.is_available():
@@ -239,9 +239,9 @@ def run_single_benchmark_all_methods(
     sc_config = config.copy()
 
     if benchmark_name == 'gsm8k':
-        results['self_consistency'] = run_gsm8k_self_consistency_experiment(sc_config)
+        results['self_consistency'] = run_gsm8k_self_consistency_experiment(sc_config, model, tokenizer, device)
     elif benchmark_name == 'strategyqa':
-        results['self_consistency'] = run_strategyqa_self_consistency_experiment(sc_config)
+        results['self_consistency'] = run_strategyqa_self_consistency_experiment(sc_config, model, tokenizer, device)
     else:
         logger.info("Self-Consistency runner not implemented for this benchmark.")
         results['self_consistency'] = {'note': 'Self-Consistency not implemented for this benchmark'}
@@ -259,9 +259,9 @@ def run_single_benchmark_all_methods(
     fgbs_config = config.copy()
 
     if benchmark_name == 'gsm8k':
-        results['fgbs'] = run_gsm8k_experiment(fgbs_config)
+        results['fgbs'] = run_gsm8k_experiment(fgbs_config, model, tokenizer, device)
     elif benchmark_name == 'strategyqa':
-        results['fgbs'] = run_strategyqa_experiment(fgbs_config)
+        results['fgbs'] = run_strategyqa_experiment(fgbs_config, model, tokenizer, device)
 
     # Clear GPU memory after FGBS
     if torch.cuda.is_available():
@@ -504,6 +504,11 @@ def main():
         default='configs/default.yaml',
         help='Config file'
     )
+    parser.add_argument(
+        '--skip_coherence',
+        action='store_true',
+        help='Skip Table 2 (coherence metrics) evaluation to save time'
+    )
 
     args = parser.parse_args()
 
@@ -579,24 +584,34 @@ def main():
     print(all_results['table_1'])
 
     # Table 2: Coherence metrics
-    logger.info("\n" + "="*80)
-    logger.info("REPRODUCING TABLE 2: COHERENCE METRICS")
-    logger.info("="*80 + "\n")
+    if args.skip_coherence:
+        logger.info("\n" + "="*80)
+        logger.info("SKIPPING TABLE 2: COHERENCE METRICS (--skip_coherence flag set)")
+        logger.info("="*80 + "\n")
+        all_results['table_2'] = "Skipped (use without --skip_coherence to run)"
+    else:
+        logger.info("\n" + "="*80)
+        logger.info("REPRODUCING TABLE 2: COHERENCE METRICS")
+        logger.info("="*80 + "\n")
 
-    try:
-        coherence_results = run_coherence_evaluation_all_methods(
-            model,
-            tokenizer,
-            config
-        )
-        all_results['coherence'] = coherence_results
+        try:
+            coherence_results = run_coherence_evaluation_all_methods(
+                model,
+                tokenizer,
+                config
+            )
+            all_results['coherence'] = coherence_results
 
-        # Generate Table 2
-        all_results['table_2'] = generate_table_2(coherence_results)
-        print(all_results['table_2'])
+            # Generate Table 2
+            all_results['table_2'] = generate_table_2(coherence_results)
+            print(all_results['table_2'])
 
-    except Exception as e:
-        logger.error(f"Failed to run coherence evaluation: {e}")
+        except Exception as e:
+            import traceback
+            logger.error(f"Failed to run coherence evaluation: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.warning("Skipping Table 2 (Coherence Metrics) due to error")
+            all_results['table_2'] = f"ERROR: Coherence evaluation failed - {str(e)}"
 
     # Save results
     output_dir = Path(args.output_dir)

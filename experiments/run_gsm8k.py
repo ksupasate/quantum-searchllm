@@ -202,12 +202,29 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
     return model, tokenizer, device
 
 
-def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Run complete GSM8K benchmark experiment with FGBS."""
+def run_gsm8k_experiment(
+    config: Dict[str, Any],
+    model: Optional[Any] = None,
+    tokenizer: Optional[Any] = None,
+    device: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Run complete GSM8K benchmark experiment with FGBS.
+
+    Args:
+        config: Configuration dictionary
+        model: Optional pre-loaded model (if None, will load from config)
+        tokenizer: Optional pre-loaded tokenizer (if None, will load from config)
+        device: Optional device (if None, will infer from config)
+    """
     logger.info("Starting GSM8K experiment")
 
     dataset = _load_gsm8k_dataset(config)
-    model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
+
+    # Use provided model/tokenizer or load new ones
+    if model is None or tokenizer is None or device is None:
+        model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
+    else:
+        logger.info("Using provided model and tokenizer (shared across experiments)")
 
     # Initialize FGBS
     fgbs_config = config['fgbs']
@@ -298,12 +315,29 @@ def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     return experiment_results
 
 
-def run_gsm8k_self_consistency_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Run GSM8K with the self-consistency baseline."""
+def run_gsm8k_self_consistency_experiment(
+    config: Dict[str, Any],
+    model: Optional[Any] = None,
+    tokenizer: Optional[Any] = None,
+    device: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Run GSM8K with the self-consistency baseline.
+
+    Args:
+        config: Configuration dictionary
+        model: Optional pre-loaded model (if None, will load from config)
+        tokenizer: Optional pre-loaded tokenizer (if None, will load from config)
+        device: Optional device (if None, will infer from config)
+    """
     logger.info("Starting GSM8K self-consistency experiment")
 
     dataset = _load_gsm8k_dataset(config)
-    model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
+
+    # Use provided model/tokenizer or load new ones
+    if model is None or tokenizer is None or device is None:
+        model, tokenizer, device = _load_gsm8k_model_and_tokenizer(config)
+    else:
+        logger.info("Using provided model and tokenizer (shared across experiments)")
 
     sc_cfg = config.get('baselines', {}).get('self_consistency', {})
     num_samples = sc_cfg.get('num_samples', 10)
