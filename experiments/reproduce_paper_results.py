@@ -110,7 +110,7 @@ def load_model_and_tokenizer(
         quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     load_kwargs: Dict[str, Any] = {
-        'dtype': dtype,
+        'torch_dtype': dtype,
         'low_cpu_mem_usage': True,
     }
 
@@ -131,7 +131,7 @@ def load_model_and_tokenizer(
                 exc.__class__.__name__,
             )
             fallback_kwargs = {
-                'dtype': torch.float32,
+                'torch_dtype': torch.float32,
                 'device_map': 'cpu',
                 'low_cpu_mem_usage': True,
             }

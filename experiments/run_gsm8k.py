@@ -178,7 +178,7 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
         quant_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model_kwargs = {
-        'dtype': getattr(torch, model_config['torch_dtype']),
+        'torch_dtype': getattr(torch, model_config['torch_dtype']),
         'quantization_config': quant_config,
     }
     if quant_config is not None:
