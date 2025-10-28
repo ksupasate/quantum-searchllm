@@ -25,6 +25,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import os
 import sys
@@ -199,6 +200,14 @@ def run_single_benchmark_all_methods(
         greedy_config['fgbs']['alpha'] = 1.0
         results['greedy'] = run_strategyqa_experiment(greedy_config)
 
+    # Clear GPU memory after greedy decoding
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    gc.collect()
+    logger.info("Memory cleared after Greedy Decoding")
+
     # 2. Standard Beam Search (B=5)
     logger.info("Running Standard Beam Search (B=5)...")
     beam_config = config.copy()
@@ -217,6 +226,14 @@ def run_single_benchmark_all_methods(
     elif benchmark_name == 'strategyqa':
         results['beam_search'] = run_strategyqa_experiment(beam_config)
 
+    # Clear GPU memory after beam search
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    gc.collect()
+    logger.info("Memory cleared after Beam Search")
+
     # 3. Self-Consistency (N=10)
     logger.info("Running Self-Consistency (N=10)...")
     sc_config = config.copy()
@@ -229,6 +246,14 @@ def run_single_benchmark_all_methods(
         logger.info("Self-Consistency runner not implemented for this benchmark.")
         results['self_consistency'] = {'note': 'Self-Consistency not implemented for this benchmark'}
 
+    # Clear GPU memory after self-consistency
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    gc.collect()
+    logger.info("Memory cleared after Self-Consistency")
+
     # 4. FGBS (Our Method)
     logger.info(f"Running FGBS (α={config['fgbs']['alpha']}, χ={config['fgbs']['bond_dim']})...")
     fgbs_config = config.copy()
@@ -237,6 +262,14 @@ def run_single_benchmark_all_methods(
         results['fgbs'] = run_gsm8k_experiment(fgbs_config)
     elif benchmark_name == 'strategyqa':
         results['fgbs'] = run_strategyqa_experiment(fgbs_config)
+
+    # Clear GPU memory after FGBS
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    gc.collect()
+    logger.info("Memory cleared after FGBS")
 
     return results
 
@@ -268,16 +301,25 @@ def run_coherence_evaluation_all_methods(
     logger.info("Evaluating Greedy Decoding coherence...")
     greedy = GreedyDecoder(model, tokenizer, device)
     results['greedy'] = run_coherence_evaluation(greedy, model, tokenizer)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     # 2. Beam Search
     logger.info("Evaluating Beam Search coherence...")
     beam_search = StandardBeamSearch(model, tokenizer, beam_width=5, device=device)
     results['beam_search'] = run_coherence_evaluation(beam_search, model, tokenizer)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     # 3. Self-Consistency
     logger.info("Evaluating Self-Consistency coherence...")
     self_consistency = SelfConsistency(model, tokenizer, num_samples=10, device=device)
     results['self_consistency'] = run_coherence_evaluation(self_consistency, model, tokenizer)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     # 4. FGBS
     logger.info("Evaluating FGBS coherence...")
@@ -293,6 +335,9 @@ def run_coherence_evaluation_all_methods(
         normalize_embeddings=config['fgbs']['normalize_embeddings'],
     )
     results['fgbs'] = run_coherence_evaluation(fgbs, model, tokenizer)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     return results
 
@@ -518,6 +563,14 @@ def main():
                 config
             )
             all_results[benchmark] = bench_results
+
+            # Clear GPU memory between benchmarks
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            gc.collect()
+            logger.info(f"Memory cleared after {benchmark.upper()} benchmark")
         except Exception as e:
             logger.error(f"Failed to run {benchmark}: {e}")
 

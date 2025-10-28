@@ -336,6 +336,14 @@ class MPSSequence:
 
         schmidt = normalize_schmidt_values(singular_values.detach().cpu().numpy())
         schmidt = np.abs(schmidt)
+
+        # Limit Schmidt cache size to prevent memory accumulation
+        MAX_SCHMIDT_CACHE_SIZE = 20
+        if len(self._schmidt_cache) >= MAX_SCHMIDT_CACHE_SIZE:
+            # Remove oldest entry (LRU eviction)
+            oldest_key = min(self._schmidt_cache.keys())
+            del self._schmidt_cache[oldest_key]
+
         self._schmidt_cache[cache_key] = schmidt
         return schmidt
 
@@ -362,9 +370,9 @@ class MPSSequence:
             input_projection=self._input_projection.clone().detach(),
         )
 
-        new_mps.tensors = [tensor.clone() for tensor in self.tensors]
-        new_mps._latent_states = [state.clone() for state in self._latent_states]
-        new_mps._embeddings = [emb.clone() for emb in self._embeddings]
+        new_mps.tensors = [tensor.clone().detach() for tensor in self.tensors]
+        new_mps._latent_states = [state.clone().detach() for state in self._latent_states]
+        new_mps._embeddings = [emb.clone().detach() for emb in self._embeddings]
         new_mps._current_right_bond_dim = self._current_right_bond_dim
         new_mps._schmidt_cache = {
             key: value.copy() for key, value in self._schmidt_cache.items()

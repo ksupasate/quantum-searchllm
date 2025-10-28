@@ -54,13 +54,16 @@ class GreedyDecoder:
         show_progress: bool = False,
     ) -> Dict[str, Any]:
         """Generate using greedy decoding."""
-        # Tokenize prompt
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+        # Tokenize prompt with attention mask
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
 
         # Greedy generation
         with torch.no_grad():
             output_ids = self.model.generate(
                 input_ids,
+                attention_mask=attention_mask,
                 max_length=input_ids.shape[1] + max_length,
                 min_length=input_ids.shape[1] + min_length,
                 do_sample=False,  # Greedy
@@ -112,13 +115,16 @@ class StandardBeamSearch:
         show_progress: bool = False,
     ) -> Dict[str, Any]:
         """Generate using standard beam search."""
-        # Tokenize prompt
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+        # Tokenize prompt with attention mask
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
 
         # Beam search generation
         with torch.no_grad():
             output_ids = self.model.generate(
                 input_ids,
+                attention_mask=attention_mask,
                 max_length=input_ids.shape[1] + max_length,
                 min_length=input_ids.shape[1] + min_length,
                 do_sample=False,
@@ -187,8 +193,10 @@ class SelfConsistency:
         Returns:
             Dictionary with majority answer and all samples
         """
-        # Tokenize prompt
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+        # Tokenize prompt with attention mask
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
 
         # Generate N diverse samples
         samples = []
@@ -201,6 +209,7 @@ class SelfConsistency:
             with torch.no_grad():
                 output_ids = self.model.generate(
                     input_ids,
+                    attention_mask=attention_mask,
                     max_length=input_ids.shape[1] + max_length,
                     min_length=input_ids.shape[1] + min_length,
                     do_sample=True,  # Sampling for diversity
@@ -211,6 +220,10 @@ class SelfConsistency:
 
             text = self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
             samples.append(text)
+
+            # Clear GPU memory after each sample to prevent accumulation
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Extract answers if extractor provided
         if answer_extractor is not None:

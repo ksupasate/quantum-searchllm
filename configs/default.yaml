@@ -6,13 +6,14 @@ model:
   name: "mistralai/Mistral-7B-Instruct-v0.3"  # HuggingFace model identifier (Mistral 7B, fully open)
   # Alternatives: "microsoft/phi-2", "meta-llama/Llama-3.1-8B-Instruct", "google/gemma-2-2b-it", "gpt2"
   device: "auto"  # "auto", "cuda", "cpu", "mps"
-  load_in_8bit: false  # Use 8-bit quantization for memory efficiency
+  load_in_8bit: true  # Use 8-bit quantization for memory efficiency (ENABLED FOR LOW-MEMORY GPUS)
   torch_dtype: "float16"  # "float32", "float16", "bfloat16" - float16 for efficiency
 
 # FGBS Algorithm Parameters
 fgbs:
-  beam_width: 5  # Number of parallel beams (B)
+  beam_width: 3  # Number of parallel beams (B) - REDUCED FOR LOW-MEMORY GPUS
   # Typical values: 3-10. Higher = better quality but slower
+  # Default was 5, reduced to 3 for memory efficiency
 
   alpha: 0.5  # Fluency vs coherence balance ∈ [0, 1]
   # α = 1.0: Pure LLM probability (standard beam search)
@@ -20,19 +21,20 @@ fgbs:
   # α = 0.3: Prioritize coherence (good for reasoning)
   # α = 0.7: Prioritize fluency (good for creative writing)
 
-  bond_dim: 16  # MPS bond dimension (χ)
+  bond_dim: 8  # MPS bond dimension (χ) - REDUCED FOR LOW-MEMORY GPUS
   # Typical values: 8-32
   # Smaller χ: Faster but limited logical tracking
   # Larger χ: Slower but better coherence monitoring
+  # Default was 16, reduced to 8 for memory efficiency
 
-  top_k: 50  # Number of top tokens to consider per beam
+  top_k: 30  # Number of top tokens to consider per beam - REDUCED FOR LOW-MEMORY GPUS
   temperature: 1.0  # Sampling temperature (1.0 = no scaling)
 
   normalize_embeddings: true  # L2-normalize token embeddings in MPS
 
 # Generation Parameters
 generation:
-  max_length: 512  # Maximum generation length (tokens)
+  max_length: 256  # Maximum generation length (tokens) - REDUCED FOR LOW-MEMORY GPUS
   min_length: 10  # Minimum length before allowing EOS
   show_progress: true  # Display progress bar during generation
   return_details: false  # Return detailed generation info (beams, trajectories)

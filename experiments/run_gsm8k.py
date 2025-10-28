@@ -254,6 +254,11 @@ def run_gsm8k_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
         if eval_result['correct']:
             correct_count += 1
 
+        # Clear GPU memory periodically to prevent accumulation
+        if (idx + 1) % 5 == 0:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         # Log progress
         if (idx + 1) % 10 == 0:
             current_accuracy = correct_count / len(results)
