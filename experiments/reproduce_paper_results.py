@@ -27,6 +27,13 @@ Usage:
         --seeds 42 123 456 \
         --num_examples 500
 
+    # Run only specific methods (e.g., for resource optimization)
+    python experiments/reproduce_paper_results.py \
+        --models mistralai/Mistral-7B-Instruct-v0.3 \
+        --methods beam_search fgbs \
+        --seeds 42 123 456 \
+        --num_examples 500
+
     # Custom configuration
     python experiments/reproduce_paper_results.py --model meta-llama/Llama-3.1-8B-Instruct \
         --num_examples 100 --alpha 0.5 --bond_dim 16
@@ -274,9 +281,10 @@ def run_single_benchmark_all_methods(
     seed: int,
     model_name: str,
     output_dir: Path,
+    methods_to_run: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Run a single benchmark with all methods (baselines + FGBS) for one seed.
+    Run a single benchmark with specified methods for one seed.
 
     Args:
         benchmark_name: 'gsm8k', 'strategyqa', or 'entailmentbank'
@@ -286,18 +294,21 @@ def run_single_benchmark_all_methods(
         seed: Random seed
         model_name: Model identifier
         output_dir: Directory to save results
+        methods_to_run: List of methods to run (default: all methods)
 
     Returns:
         Dictionary with results from all methods
     """
+    if methods_to_run is None:
+        methods_to_run = ['greedy', 'beam_search', 'self_consistency', 'fgbs']
+
     logger.info(f"\n{'='*60}")
-    logger.info(f"Running {benchmark_name.upper()} with all methods (seed={seed})")
+    logger.info(f"Running {benchmark_name.upper()} with methods: {methods_to_run} (seed={seed})")
     logger.info(f"{'='*60}\n")
 
     results = {}
-    methods = ['greedy', 'beam_search', 'self_consistency', 'fgbs']
 
-    for method in methods:
+    for method in methods_to_run:
         try:
             result = run_single_method_single_seed(
                 method,
@@ -404,9 +415,10 @@ def run_coherence_evaluation_all_methods(
     config: Dict[str, Any],
     seed: int,
     output_dir: Path,
+    methods_to_run: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Run coherence evaluation (Table 2) with all methods for one seed.
+    Run coherence evaluation (Table 2) with specified methods for one seed.
 
     Args:
         model: LLM model
@@ -414,18 +426,21 @@ def run_coherence_evaluation_all_methods(
         config: Configuration dict
         seed: Random seed
         output_dir: Directory to save results
+        methods_to_run: List of methods to run (default: all methods)
 
     Returns:
         Dictionary with coherence metrics for all methods
     """
+    if methods_to_run is None:
+        methods_to_run = ['greedy', 'beam_search', 'self_consistency', 'fgbs']
+
     logger.info(f"\n{'='*60}")
-    logger.info(f"Running Coherence Evaluation (Table 2) (seed={seed})")
+    logger.info(f"Running Coherence Evaluation (Table 2) with methods: {methods_to_run} (seed={seed})")
     logger.info(f"{'='*60}\n")
 
     results = {}
-    methods = ['greedy', 'beam_search', 'self_consistency', 'fgbs']
 
-    for method in methods:
+    for method in methods_to_run:
         try:
             result = run_coherence_evaluation_single_method(
                 method,
@@ -632,6 +647,14 @@ def main():
         default=['gsm8k', 'strategyqa'],
         help='Benchmarks to run (space-separated, e.g., gsm8k strategyqa)'
     )
+    parser.add_argument(
+        '--methods',
+        type=str,
+        nargs='+',
+        default=['greedy', 'beam_search', 'self_consistency', 'fgbs'],
+        choices=['greedy', 'beam_search', 'self_consistency', 'fgbs'],
+        help='Methods to run (space-separated, e.g., beam_search fgbs). Default: all methods'
+    )
 
     args = parser.parse_args()
 
@@ -668,6 +691,7 @@ def main():
         'models': models_to_test,
         'seeds': args.seeds,
         'benchmarks': args.benchmarks,
+        'methods': args.methods,
         'config': config,
         'timestamp': datetime.now().isoformat(),
     }
@@ -682,8 +706,9 @@ def main():
     logger.info(f"Models: {models_to_test}")
     logger.info(f"Seeds: {args.seeds}")
     logger.info(f"Benchmarks: {args.benchmarks}")
+    logger.info(f"Methods: {args.methods}")
     logger.info(f"Number of examples: {config['experiment']['num_examples']}")
-    logger.info(f"Total experiments: {len(models_to_test) * len(args.seeds) * len(args.benchmarks) * 4}")
+    logger.info(f"Total experiments: {len(models_to_test) * len(args.seeds) * len(args.benchmarks) * len(args.methods)}")
     logger.info(f"{'='*80}\n")
 
     # Run experiments for each model
@@ -724,7 +749,8 @@ def main():
                         config,
                         seed,
                         model_name,
-                        output_dir
+                        output_dir,
+                        methods_to_run=args.methods
                     )
 
                     # Clear GPU memory between benchmarks
@@ -747,7 +773,8 @@ def main():
                         tokenizer,
                         config,
                         seed,
-                        output_dir
+                        output_dir,
+                        methods_to_run=args.methods
                     )
 
                     # Clear GPU memory
@@ -774,13 +801,11 @@ def main():
     logger.info("GENERATING AGGREGATED RESULTS")
     logger.info(f"{'='*80}\n")
 
-    methods = ['greedy', 'beam_search', 'self_consistency', 'fgbs']
-
     # Generate Table 1 with statistics
     logger.info("Generating Table 1 (Accuracy) with statistics...")
     table_1 = generate_accuracy_table(
         output_dir,
-        methods,
+        args.methods,
         args.benchmarks,
         models_to_test,
         baseline_method='greedy',
@@ -795,7 +820,7 @@ def main():
     # Generate LaTeX version
     table_1_latex = generate_accuracy_table(
         output_dir,
-        methods,
+        args.methods,
         args.benchmarks,
         models_to_test,
         baseline_method='greedy',
@@ -809,7 +834,7 @@ def main():
         logger.info("Generating Table 2 (Coherence) with statistics...")
         table_2 = generate_coherence_table(
             output_dir,
-            methods,
+            args.methods,
             output_format='markdown'
         )
         print("\n" + table_2)
@@ -821,7 +846,7 @@ def main():
         # Generate LaTeX version
         table_2_latex = generate_coherence_table(
             output_dir,
-            methods,
+            args.methods,
             output_format='latex'
         )
         with open(output_dir / 'table_2_coherence.tex', 'w') as f:
@@ -839,7 +864,7 @@ def main():
     save_results_summary(
         output_dir,
         output_dir / 'results_summary.json',
-        methods,
+        args.methods,
         args.benchmarks,
         models_to_test
     )
