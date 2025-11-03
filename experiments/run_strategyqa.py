@@ -260,11 +260,23 @@ def _load_strategyqa_resources(config: Dict[str, Any]):
     model_config = config['model']
     logger.info(f"Loading model: {model_config['name']}")
 
+    # Report GPU memory before model load
+    if torch.cuda.is_available():
+        mem_before = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"GPU memory before model load: {mem_before:.2f} GB")
+
     tokenizer = AutoTokenizer.from_pretrained(model_config['name'])
 
+    # Enhanced 8-bit quantization configuration
     quant_config = None
-    if model_config.get('load_in_8bit', False):
-        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    load_in_8bit = model_config.get('load_in_8bit', False)
+    if load_in_8bit:
+        logger.info("Configuring 8-bit quantization (saves ~50% memory)")
+        quant_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,  # Critical: don't keep fp16 copy
+        )
 
     model_kwargs = {
         'torch_dtype': getattr(torch, model_config['torch_dtype']),
@@ -277,6 +289,28 @@ def _load_strategyqa_resources(config: Dict[str, Any]):
         model_config['name'],
         **model_kwargs,
     )
+
+    # Report GPU memory after model load and verify quantization
+    if torch.cuda.is_available():
+        mem_after = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"GPU memory after model load: {mem_after:.2f} GB")
+        logger.info(f"Model memory footprint: {mem_after - mem_before:.2f} GB")
+
+        # Verify quantization worked
+        if load_in_8bit:
+            # Count int8 vs fp16/fp32 parameters
+            int8_params = sum(1 for p in model.parameters() if p.dtype == torch.int8)
+            total_params = sum(1 for _ in model.parameters())
+            logger.info(f"Parameter types: {int8_params}/{total_params} are int8")
+
+            # Warn if model uses too much memory
+            expected_max_gb = 20.0  # 7B model with 8-bit should be ~14GB, allow some overhead
+            if mem_after - mem_before > expected_max_gb:
+                logger.warning(
+                    f"WARNING: Model using {mem_after - mem_before:.2f} GB, "
+                    f"expected ~14 GB with 8-bit quantization. "
+                    f"Quantization may not be working properly!"
+                )
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

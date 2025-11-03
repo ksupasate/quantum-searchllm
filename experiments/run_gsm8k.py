@@ -186,23 +186,50 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
     model_config = config['model']
     logger.info(f"Loading model: {model_config['name']}")
 
+    # Clear any existing CUDA cache before loading
+    clear_memory()
+
+    # Report initial memory
+    if torch.cuda.is_available():
+        initial_mem = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"GPU memory before load: {initial_mem:.2f} GB")
+
     tokenizer = AutoTokenizer.from_pretrained(model_config['name'])
 
+    # Configure 8-bit quantization with optimal settings
     quant_config = None
     if model_config.get('load_in_8bit', False):
-        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+        logger.info("Enabling 8-bit quantization for memory efficiency")
+        quant_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,  # Optimal for memory
+            llm_int8_has_fp16_weight=False,  # Don't keep fp16 copy
+        )
 
     model_kwargs = {
         'torch_dtype': getattr(torch, model_config['torch_dtype']),
-        'quantization_config': quant_config,
+        'low_cpu_mem_usage': True,  # Essential for large models
     }
+
+    # When using quantization, MUST use device_map
     if quant_config is not None:
+        model_kwargs['quantization_config'] = quant_config
         model_kwargs['device_map'] = 'auto'
+    elif model_config.get('device', 'auto') == 'auto':
+        model_kwargs['device_map'] = 'auto'
+
+    logger.info(f"Model loading kwargs: {list(model_kwargs.keys())}")
 
     model = AutoModelForCausalLM.from_pretrained(
         model_config['name'],
         **model_kwargs,
     )
+
+    # Report memory after loading
+    if torch.cuda.is_available():
+        loaded_mem = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"GPU memory after load: {loaded_mem:.2f} GB")
+        logger.info(f"Model size: {loaded_mem - initial_mem:.2f} GB")
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -213,6 +240,11 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
         device = torch.device(model_config['device'])
 
     logger.info(f"Using device: {device}")
+
+    # Verify 8-bit loading worked
+    if quant_config is not None:
+        first_param = next(model.parameters())
+        logger.info(f"Model parameter dtype: {first_param.dtype} (should be uint8 for 8-bit)")
 
     return model, tokenizer, device
 

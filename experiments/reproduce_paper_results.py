@@ -126,6 +126,13 @@ def load_model_and_tokenizer(
     """Load model and tokenizer with graceful fallbacks for constrained devices."""
     logger.info(f"Loading model: {model_name}")
 
+    # Clear CUDA cache before loading
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        initial_mem = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"GPU memory before model load: {initial_mem:.2f} GB")
+
     if torch.backends.mps.is_available():
         os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
@@ -134,19 +141,27 @@ def load_model_and_tokenizer(
     dtype = _resolve_dtype(torch_dtype_name)
     quantization_config = None
     if load_in_8bit:
-        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+        logger.info("Configuring 8-bit quantization (saves ~50% memory)")
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,  # Critical: don't keep fp16 copy
+        )
 
     load_kwargs: Dict[str, Any] = {
         'torch_dtype': dtype,
         'low_cpu_mem_usage': True,
     }
 
+    # Configure device mapping
     if quantization_config is not None:
         load_kwargs['quantization_config'] = quantization_config
+        load_kwargs['device_map'] = 'auto'  # Required for quantization
+    elif device == 'auto':
         load_kwargs['device_map'] = 'auto'
+    # Don't override device_map if quantization is enabled
 
-    if device is not None:
-        load_kwargs['device_map'] = device
+    logger.info(f"Loading model with: dtype={dtype}, 8bit={load_in_8bit}, device_map={load_kwargs.get('device_map')}")
 
     try:
         model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
@@ -163,7 +178,11 @@ def load_model_and_tokenizer(
                 'low_cpu_mem_usage': True,
             }
             if load_in_8bit:
-                fallback_cfg = BitsAndBytesConfig(load_in_8bit=True)
+                fallback_cfg = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                    llm_int8_threshold=6.0,
+                    llm_int8_has_fp16_weight=False,
+                )
                 fallback_kwargs['quantization_config'] = fallback_cfg
                 fallback_kwargs['device_map'] = 'auto'
             model = AutoModelForCausalLM.from_pretrained(model_name, **fallback_kwargs)
@@ -172,6 +191,21 @@ def load_model_and_tokenizer(
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # Report memory usage
+    if torch.cuda.is_available():
+        loaded_mem = torch.cuda.memory_allocated() / 1e9
+        model_size = loaded_mem - initial_mem
+        logger.info(f"GPU memory after model load: {loaded_mem:.2f} GB")
+        logger.info(f"Model size in GPU: {model_size:.2f} GB")
+
+        # Verify quantization
+        if load_in_8bit:
+            first_param = next(model.parameters())
+            logger.info(f"Param dtype: {first_param.dtype} (should be uint8 or int8 for quantization)")
+            if model_size > 20:
+                logger.warning(f"⚠️  Model using {model_size:.1f} GB but expected ~14 GB with 8-bit!")
+                logger.warning("    8-bit quantization may not be working properly!")
 
     return model, tokenizer
 
