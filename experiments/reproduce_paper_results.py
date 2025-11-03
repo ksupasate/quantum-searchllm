@@ -122,8 +122,9 @@ def load_model_and_tokenizer(
     device: str = 'auto',
     torch_dtype_name: Optional[str] = None,
     load_in_8bit: bool = False,
+    load_in_4bit: bool = False,
 ) -> tuple[Any, Any]:
-    """Load model and tokenizer with graceful fallbacks for constrained devices."""
+    """Load model and tokenizer with 4-bit fallback and better memory management."""
     logger.info(f"Loading model: {model_name}")
 
     # Clear CUDA cache before loading
@@ -139,53 +140,68 @@ def load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     dtype = _resolve_dtype(torch_dtype_name)
+
+    # Try 8-bit first, fall back to 4-bit if needed
     quantization_config = None
+    quantization_mode = "none"
+
     if load_in_8bit:
-        logger.info("Configuring 8-bit quantization (saves ~50% memory)")
+        try:
+            logger.info("Attempting 8-bit quantization for memory efficiency")
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+            )
+            quantization_mode = "8bit"
+        except Exception as e:
+            logger.warning(f"8-bit quantization config failed: {e}, trying 4-bit instead")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            quantization_mode = "4bit"
+    elif load_in_4bit:
+        logger.info("Enabling 4-bit quantization for maximum memory efficiency")
         quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,  # Critical: don't keep fp16 copy
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
         )
+        quantization_mode = "4bit"
 
     load_kwargs: Dict[str, Any] = {
         'torch_dtype': dtype,
         'low_cpu_mem_usage': True,
     }
 
-    # Configure device mapping
     if quantization_config is not None:
         load_kwargs['quantization_config'] = quantization_config
-        load_kwargs['device_map'] = 'auto'  # Required for quantization
+        load_kwargs['device_map'] = 'auto'
     elif device == 'auto':
         load_kwargs['device_map'] = 'auto'
-    # Don't override device_map if quantization is enabled
 
-    logger.info(f"Loading model with: dtype={dtype}, 8bit={load_in_8bit}, device_map={load_kwargs.get('device_map')}")
+    logger.info(f"Model loading with {quantization_mode} quantization")
+    logger.info(f"Loading model with: dtype={dtype}, device_map={load_kwargs.get('device_map')}")
 
     try:
         model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
-    except RuntimeError as exc:
-        message = str(exc)
-        if 'out of memory' in message.lower():
-            logger.warning(
-                "Initial model load failed due to OOM (%s). Retrying on CPU with float32.",
-                exc.__class__.__name__,
+    except Exception as e:
+        if quantization_mode == "8bit":
+            logger.error(f"8-bit loading failed: {e}")
+            logger.info("Falling back to 4-bit quantization")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
             )
-            fallback_kwargs = {
-                'torch_dtype': torch.float32,
-                'device_map': 'cpu',
-                'low_cpu_mem_usage': True,
-            }
-            if load_in_8bit:
-                fallback_cfg = BitsAndBytesConfig(
-                    load_in_8bit=True,
-                    llm_int8_threshold=6.0,
-                    llm_int8_has_fp16_weight=False,
-                )
-                fallback_kwargs['quantization_config'] = fallback_cfg
-                fallback_kwargs['device_map'] = 'auto'
-            model = AutoModelForCausalLM.from_pretrained(model_name, **fallback_kwargs)
+            load_kwargs['quantization_config'] = quantization_config
+            quantization_mode = "4bit"
+            model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
         else:
             raise
 
@@ -199,13 +215,19 @@ def load_model_and_tokenizer(
         logger.info(f"GPU memory after model load: {loaded_mem:.2f} GB")
         logger.info(f"Model size in GPU: {model_size:.2f} GB")
 
-        # Verify quantization
-        if load_in_8bit:
-            first_param = next(model.parameters())
-            logger.info(f"Param dtype: {first_param.dtype} (should be uint8 or int8 for quantization)")
-            if model_size > 20:
-                logger.warning(f"⚠️  Model using {model_size:.1f} GB but expected ~14 GB with 8-bit!")
-                logger.warning("    8-bit quantization may not be working properly!")
+        # Verify quantization worked
+        expected_size = {"8bit": 15, "4bit": 8, "none": 30}
+        if quantization_mode != "none" and model_size > expected_size[quantization_mode] * 1.5:
+            logger.warning(f"⚠️  Model using {model_size:.2f} GB, expected ~{expected_size[quantization_mode]} GB for {quantization_mode}")
+            logger.warning(f"⚠️  Quantization may not be working properly!")
+
+    # Verify quantization status
+    if quantization_config is not None:
+        is_8bit = getattr(model, "is_loaded_in_8bit", False)
+        is_4bit = getattr(model, "is_loaded_in_4bit", False)
+        logger.info(f"Model quantization status: 8bit={is_8bit}, 4bit={is_4bit}")
+        if not is_8bit and not is_4bit and quantization_mode != "none":
+            logger.error("❌ Quantization failed to activate!")
 
     return model, tokenizer
 
@@ -255,7 +277,7 @@ def run_single_method_single_seed(
         }
     elif method_name == 'beam_search':
         method_config['fgbs'] = {
-            'beam_width': 5,
+            'beam_width': 3,  # Reduced from 5 to 3 for memory efficiency
             'alpha': 1.0,  # Pure LLM probability
             'bond_dim': config['fgbs']['bond_dim'],
             'top_k': config['fgbs']['top_k'],
@@ -400,7 +422,7 @@ def run_coherence_evaluation_single_method(
     if method_name == 'greedy':
         decoder = GreedyDecoder(model, tokenizer, device)
     elif method_name == 'beam_search':
-        decoder = StandardBeamSearch(model, tokenizer, beam_width=5, device=device)
+        decoder = StandardBeamSearch(model, tokenizer, beam_width=3, device=device)
     elif method_name == 'self_consistency':
         decoder = SelfConsistency(model, tokenizer, num_samples=10, device=device)
     elif method_name == 'fgbs':
@@ -762,12 +784,14 @@ def main():
         device_target = model_cfg.get('device', 'auto')
         torch_dtype_name = model_cfg.get('torch_dtype')
         load_in_8bit = model_cfg.get('load_in_8bit', False)
+        load_in_4bit = model_cfg.get('load_in_4bit', False)
 
         model, tokenizer = load_model_and_tokenizer(
             model_name=model_name,
             device=device_target,
             torch_dtype_name=torch_dtype_name,
             load_in_8bit=load_in_8bit,
+            load_in_4bit=load_in_4bit,
         )
 
         # Run with multiple seeds
