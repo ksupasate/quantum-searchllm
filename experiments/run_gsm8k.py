@@ -19,6 +19,8 @@ import json
 import re
 import yaml
 import sys
+import os
+import gc
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -26,6 +28,9 @@ import numpy as np
 
 # Add parent directory to path to import tnad
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Set PyTorch memory allocator to use expandable segments (reduces fragmentation)
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -36,6 +41,16 @@ from loguru import logger
 from tnad import FidelityGuidedBeamSearcher
 from tnad.utils import setup_logger, get_device
 from experiments.baselines import SelfConsistency
+
+
+def clear_memory():
+    """Aggressively clear GPU memory to prevent fragmentation."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -271,10 +286,9 @@ def run_gsm8k_experiment(
         if eval_result['correct']:
             correct_count += 1
 
-        # Clear GPU memory periodically to prevent accumulation
-        if (idx + 1) % 5 == 0:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        # Clear GPU memory after EVERY example to prevent OOM
+        # This is more aggressive but necessary for large models with beam search
+        clear_memory()
 
         # Log progress
         if (idx + 1) % 10 == 0:

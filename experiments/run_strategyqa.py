@@ -19,6 +19,8 @@ import json
 import re
 import yaml
 import sys
+import os
+import gc
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -26,6 +28,9 @@ import numpy as np
 
 # Add parent directory to path to import tnad
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Set PyTorch memory allocator to use expandable segments (reduces fragmentation)
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -49,6 +54,16 @@ except ImportError:  # pragma: no cover
 from tnad import FidelityGuidedBeamSearcher
 from tnad.utils import get_device, setup_logger
 from experiments.baselines import SelfConsistency
+
+
+def clear_memory():
+    """Aggressively clear GPU memory to prevent fragmentation."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
 
 
 def _load_strategyqa_local(path: Path) -> Dataset:
@@ -342,10 +357,9 @@ def run_strategyqa_experiment(
         if eval_result['correct']:
             correct_count += 1
 
-        # Clear GPU memory periodically to prevent accumulation
-        if (idx + 1) % 5 == 0:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        # Clear GPU memory after EVERY example to prevent OOM
+        # This is more aggressive but necessary for large models with beam search
+        clear_memory()
 
         # Log progress
         if (idx + 1) % 10 == 0:
@@ -485,6 +499,9 @@ def run_strategyqa_self_consistency_experiment(
             'answer_counts': sc_result.get('answer_counts'),
             'method': sc_result.get('method'),
         })
+
+        # Clear GPU memory after EVERY example to prevent OOM
+        clear_memory()
 
     accuracy = correct / len(results) if results else 0.0
 
