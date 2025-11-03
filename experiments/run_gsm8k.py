@@ -196,40 +196,88 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
 
     tokenizer = AutoTokenizer.from_pretrained(model_config['name'])
 
-    # Configure 8-bit quantization with optimal settings
+    # Try 8-bit first, fall back to 4-bit if needed
     quant_config = None
+    quantization_mode = "none"
+
     if model_config.get('load_in_8bit', False):
-        logger.info("Enabling 8-bit quantization for memory efficiency")
+        try:
+            logger.info("Attempting 8-bit quantization for memory efficiency")
+            quant_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+            )
+            quantization_mode = "8bit"
+        except Exception as e:
+            logger.warning(f"8-bit quantization config failed: {e}, trying 4-bit instead")
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            quantization_mode = "4bit"
+    elif model_config.get('load_in_4bit', False):
+        logger.info("Enabling 4-bit quantization for maximum memory efficiency")
         quant_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0,  # Optimal for memory
-            llm_int8_has_fp16_weight=False,  # Don't keep fp16 copy
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
         )
+        quantization_mode = "4bit"
 
     model_kwargs = {
         'torch_dtype': getattr(torch, model_config['torch_dtype']),
-        'low_cpu_mem_usage': True,  # Essential for large models
+        'low_cpu_mem_usage': True,
     }
 
-    # When using quantization, MUST use device_map
     if quant_config is not None:
         model_kwargs['quantization_config'] = quant_config
         model_kwargs['device_map'] = 'auto'
     elif model_config.get('device', 'auto') == 'auto':
         model_kwargs['device_map'] = 'auto'
 
+    logger.info(f"Model loading with {quantization_mode} quantization")
     logger.info(f"Model loading kwargs: {list(model_kwargs.keys())}")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        model_config['name'],
-        **model_kwargs,
-    )
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_config['name'],
+            **model_kwargs,
+        )
+    except Exception as e:
+        if quantization_mode == "8bit":
+            logger.error(f"8-bit loading failed: {e}")
+            logger.info("Falling back to 4-bit quantization")
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            model_kwargs['quantization_config'] = quant_config
+            quantization_mode = "4bit"
+            model = AutoModelForCausalLM.from_pretrained(
+                model_config['name'],
+                **model_kwargs,
+            )
+        else:
+            raise
 
     # Report memory after loading
     if torch.cuda.is_available():
         loaded_mem = torch.cuda.memory_allocated() / 1e9
+        model_size = loaded_mem - initial_mem
         logger.info(f"GPU memory after load: {loaded_mem:.2f} GB")
-        logger.info(f"Model size: {loaded_mem - initial_mem:.2f} GB")
+        logger.info(f"Model size: {model_size:.2f} GB")
+
+        # Verify quantization worked
+        expected_size = {"8bit": 15, "4bit": 8, "none": 30}
+        if quantization_mode != "none" and model_size > expected_size[quantization_mode] * 1.5:
+            logger.warning(f"⚠️  Model using {model_size:.2f} GB, expected ~{expected_size[quantization_mode]} GB for {quantization_mode}")
+            logger.warning(f"⚠️  Quantization may not be working properly!")
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -241,10 +289,13 @@ def _load_gsm8k_model_and_tokenizer(config: Dict[str, Any]):
 
     logger.info(f"Using device: {device}")
 
-    # Verify 8-bit loading worked
+    # Verify quantization
     if quant_config is not None:
-        first_param = next(model.parameters())
-        logger.info(f"Model parameter dtype: {first_param.dtype} (should be uint8 for 8-bit)")
+        is_8bit = getattr(model, "is_loaded_in_8bit", False)
+        is_4bit = getattr(model, "is_loaded_in_4bit", False)
+        logger.info(f"Model quantization status: 8bit={is_8bit}, 4bit={is_4bit}")
+        if not is_8bit and not is_4bit and quantization_mode != "none":
+            logger.error("❌ Quantization failed to activate!")
 
     return model, tokenizer, device
 

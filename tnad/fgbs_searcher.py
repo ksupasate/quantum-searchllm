@@ -17,6 +17,7 @@ Key Innovation:
     bridging local probabilistic decoding with global logical constraints.
 """
 
+import gc
 import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -272,6 +273,12 @@ class FidelityGuidedBeamSearcher:
             cfs_trajectory.append(math.exp(best_beam.log_cfs))
             score_trajectory.append(best_beam.composite_score)
 
+            # Aggressive memory management every 10 steps
+            if step % 10 == 0:
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
             # Update progress bar
             progress_bar.set_postfix({
                 'length': len(best_beam.token_ids),
@@ -403,7 +410,14 @@ class FidelityGuidedBeamSearcher:
 
             for row, idx in enumerate(active_indices):
                 length = len(beams[idx].token_ids)
-                logits_per_beam[idx] = logits[row, length - 1, :]
+                # Extract and detach to prevent memory accumulation
+                logits_per_beam[idx] = logits[row, length - 1, :].detach()
+
+            # Clear KV cache and intermediate tensors to free memory
+            del outputs
+            del logits
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         for idx, beam in enumerate(beams):
             if beam.is_finished:
@@ -436,7 +450,7 @@ class FidelityGuidedBeamSearcher:
                 with torch.no_grad():
                     token_embedding = self.embedding_layer(
                         torch.tensor([token_id], device=self.device)
-                    )[0]
+                    )[0].detach()
                     new_mps.add_token(token_embedding)
 
                 new_cfs = compute_cfs_from_mps(new_mps)
@@ -457,10 +471,16 @@ class FidelityGuidedBeamSearcher:
                 all_candidates.append(candidate)
 
         if not all_candidates:
+            # No valid candidates, return current beams
             return beams
 
         all_candidates.sort(key=lambda x: x.composite_score, reverse=True)
         top_beams = all_candidates[: self.beam_width]
+
+        # Delete rejected beam candidates to free memory
+        # Keep only the top beams, discard the rest
+        del all_candidates[self.beam_width:]
+        del beams
 
         return top_beams
 

@@ -1,0 +1,111 @@
+# TNAD Memory-Optimized Configuration
+# Optimized for GPUs with limited memory (e.g., 80GB with high utilization)
+# This config uses 4-bit quantization and reduced parameters to minimize OOM errors
+
+# Model Configuration
+model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"
+  device: "auto"
+  load_in_4bit: true  # 4-bit quantization (~7GB) - more aggressive than 8-bit
+  load_in_8bit: false  # Disabled in favor of 4-bit
+  torch_dtype: "float16"
+
+# FGBS Algorithm Parameters - AGGRESSIVELY REDUCED
+fgbs:
+  beam_width: 2  # Reduced from 3 to 2 (saves ~33% beam memory)
+  alpha: 0.5
+  bond_dim: 4  # Reduced from 8 to 4 (saves MPS memory)
+  top_k: 20  # Reduced from 30 to 20
+  temperature: 1.0
+  normalize_embeddings: true
+
+# Generation Parameters - REDUCED LENGTH
+generation:
+  max_length: 128  # Reduced from 256 (saves ~50% generation memory)
+  min_length: 10
+  show_progress: true
+  return_details: false
+
+# Experimental Setup
+experiment:
+  seed: 42
+  eval_batch_size: 1
+  num_examples: -1
+  save_results: true
+  results_dir: "./results"
+  log_level: "INFO"
+  log_file: null
+
+# Dataset Configuration
+dataset:
+  name: "gsm8k"
+  split: "test"
+  shuffle: false
+
+  gsm8k:
+    prompt_template: "Q: {question}\nA: Let's think step by step."
+    extract_answer_regex: "#### (\\d+)"
+
+  strategyqa:
+    prompt_template: "Question: {question}\nAnswer (yes/no):"
+    expected_answers: ["yes", "no"]
+    hub_ids:
+      - "wics/strategy-qa"
+      - "wics/strategyqa"
+      - "strategy_qa"
+    local_path: "data/strategyqa_sample.jsonl"
+
+# Coherence Metrics Configuration
+coherence_metrics:
+  compute_negation_invariance: true
+  compute_transitivity_violations: false
+  compute_step_entailment: false
+  track_cfs_trajectory: true
+
+# Ablation Study Configuration
+ablation:
+  alpha_values: [0.0, 0.3, 0.5, 0.7, 1.0]
+  bond_dim_values: [4, 8, 16, 32]
+  beam_width_values: [1, 3, 5, 10]
+  examples_per_config: 100
+
+# Baseline Comparison
+baselines:
+  compare_greedy: true
+  compare_beam_search: true
+  compare_self_consistency: false
+
+  self_consistency:
+    num_samples: 10
+    temperature: 0.7
+
+# Visualization
+visualization:
+  plot_cfs_trajectory: true
+  plot_score_trajectory: true
+  plot_schmidt_spectrum: false
+  figure_size: [10, 6]
+  style: "seaborn-v0_8"
+  save_plots: true
+  plots_dir: "./plots"
+
+# Performance Optimization
+optimization:
+  use_gradient_checkpointing: false
+  use_torch_compile: false
+  use_mixed_precision: false
+  num_threads: 4
+
+# Advanced Settings
+advanced:
+  mps:
+    svd_truncation_threshold: null
+    use_randomized_svd: false
+
+  numerical:
+    epsilon: 1.0e-10
+    log_epsilon: 1.0e-10
+
+  cache:
+    cache_embeddings: false  # Disabled to save memory
+    cache_mps_states: false  # Disabled to save memory
