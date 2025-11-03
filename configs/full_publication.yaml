@@ -1,0 +1,167 @@
+# TNAD Full Publication Configuration
+# Production-ready configuration for generating paper results
+# Optimized for quality over speed - requires good GPU (16GB+ VRAM recommended)
+
+# Model Configuration
+model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"  # Default model
+  # Test on multiple models for robustness:
+  # - "mistralai/Mistral-7B-Instruct-v0.3" (7B)
+  # - "microsoft/phi-2" (2.7B)
+  # - "meta-llama/Llama-3.1-8B-Instruct" (8B, requires approval)
+  # - "google/gemma-2-2b-it" (2B)
+  device: "auto"  # Auto-detect best device
+  load_in_8bit: true  # Keep for compatibility with 16GB GPUs
+  torch_dtype: "float16"  # float16 for efficiency
+
+# FGBS Algorithm Parameters (Publication Quality)
+fgbs:
+  beam_width: 5  # Standard beam width (increased from 3)
+  # Higher beam width = better quality but requires more memory
+
+  alpha: 0.5  # Balanced fluency vs coherence
+  # Run ablations: [0.0, 0.3, 0.5, 0.7, 1.0]
+
+  bond_dim: 16  # Higher bond dimension (increased from 8)
+  # Higher χ = better coherence tracking but slower
+  # Run ablations: [4, 8, 16, 32]
+
+  top_k: 50  # More candidates per beam (increased from 30)
+  temperature: 1.0  # Standard temperature
+  normalize_embeddings: true
+
+# Generation Parameters (Full Length)
+generation:
+  max_length: 512  # Full generation length (increased from 256)
+  min_length: 10
+  show_progress: true
+  return_details: true  # Save detailed generation info
+
+# Experimental Setup (FULL PUBLICATION MODE)
+experiment:
+  seed: 42  # Primary seed - use multiple seeds: [42, 123, 456, 789, 1024]
+  eval_batch_size: 1
+  num_examples: 1000  # Full evaluation (or -1 for all available)
+  # GSM8K: Use 1000-1319 examples (full test set)
+  # StrategyQA: Use full test set (~2780 examples)
+  save_results: true
+  results_dir: "./results/publication"
+  log_level: "INFO"
+  log_file: "experiment.log"  # Save logs to file
+
+# Dataset Configuration
+dataset:
+  name: "gsm8k"
+  split: "test"
+  shuffle: false  # Keep deterministic
+  gsm8k:
+    prompt_template: "Q: {question}\nA: Let's think step by step."
+    extract_answer_regex: "#### (\\d+)"
+  strategyqa:
+    prompt_template: "Question: {question}\nAnswer (yes/no):"
+    expected_answers: ["yes", "no"]
+    hub_ids:
+      - "wics/strategy-qa"
+      - "wics/strategyqa"
+      - "strategy_qa"
+    local_path: "data/strategyqa_sample.jsonl"
+
+# Coherence Metrics (Full Evaluation)
+coherence_metrics:
+  compute_negation_invariance: true  # Essential for Table 2
+  compute_transitivity_violations: true  # Essential for Table 2
+  compute_step_entailment: false  # Optional - requires NLI model
+  track_cfs_trajectory: true  # Track CFS for analysis
+
+# Ablation Study Configuration (Publication Quality)
+ablation:
+  # Alpha sweep (fluency vs coherence trade-off)
+  alpha_values: [0.0, 0.3, 0.5, 0.7, 1.0]
+
+  # Bond dimension sweep (logical bandwidth)
+  bond_dim_values: [4, 8, 16, 32]
+
+  # Beam width sweep (search quality)
+  beam_width_values: [1, 3, 5, 10]
+
+  # Number of examples per ablation configuration
+  examples_per_config: 500  # Balance between speed and reliability
+
+# Baseline Comparison (All Methods)
+baselines:
+  compare_greedy: true  # Essential baseline
+  compare_beam_search: true  # Essential baseline
+  compare_self_consistency: true  # Important baseline (expensive)
+  self_consistency:
+    num_samples: 10  # Standard self-consistency
+    temperature: 0.7
+
+# Visualization (Publication Quality)
+visualization:
+  plot_cfs_trajectory: true  # Show coherence evolution
+  plot_score_trajectory: true  # Show score evolution
+  plot_schmidt_spectrum: true  # Show entanglement structure
+  figure_size: [10, 6]
+  style: "seaborn-v0_8"
+  save_plots: true
+  plots_dir: "./plots/publication"
+
+# Performance Optimization
+optimization:
+  use_gradient_checkpointing: false  # Not needed for inference
+  use_torch_compile: false  # May cause compatibility issues
+  use_mixed_precision: false  # Already using float16
+  num_threads: 8  # Increase for better CPU parallelism
+
+# Advanced Settings
+advanced:
+  mps:
+    svd_truncation_threshold: null  # No truncation for quality
+    use_randomized_svd: false  # Use exact SVD for quality
+  numerical:
+    epsilon: 1.0e-10
+    log_epsilon: 1.0e-10
+  cache:
+    cache_embeddings: false  # Disable to save memory
+    cache_mps_states: true  # Enable for detailed analysis
+
+# Statistical Analysis (Multi-Seed Configuration)
+statistical_analysis:
+  # Run with multiple seeds for statistical significance
+  seeds: [42, 123, 456, 789, 1024]  # 5 seeds recommended
+
+  # Models to test for robustness
+  models:
+    - "mistralai/Mistral-7B-Instruct-v0.3"
+    - "microsoft/phi-2"
+    - "meta-llama/Llama-3.1-8B-Instruct"
+
+  # Confidence level for statistical tests
+  confidence_level: 0.95
+
+  # Significance threshold
+  alpha_threshold: 0.05
+
+# Publication Requirements
+publication:
+  # Minimum requirements for publication
+  min_seeds: 3  # At least 3 random seeds
+  min_examples: 500  # At least 500 examples per benchmark
+  min_models: 2  # At least 2 different model sizes
+
+  # Recommended for top-tier venues
+  recommended_seeds: 5
+  recommended_examples: 1000
+  recommended_models: 3
+
+  # Output formats
+  generate_latex_tables: true
+  generate_plots: true
+  generate_error_analysis: true
+
+# Resource Estimates (per model, per seed)
+# GPU: 16GB VRAM (24GB recommended for B=5, χ=16)
+# Time: ~6-8 hours for full GSM8K (1000 examples)
+# Time: ~8-10 hours for full StrategyQA
+# Total for 3 models × 3 seeds × 2 datasets: ~240-320 hours GPU time
+# Recommend: Use multiple GPUs in parallel or cloud computing

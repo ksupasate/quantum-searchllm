@@ -1,0 +1,135 @@
+{
+  "models": [
+    "mistralai/Mistral-7B-Instruct-v0.3"
+  ],
+  "seeds": [
+    42
+  ],
+  "benchmarks": [
+    "gsm8k",
+    "strategyqa"
+  ],
+  "config": {
+    "model": {
+      "name": "mistralai/Mistral-7B-Instruct-v0.3",
+      "device": "auto",
+      "load_in_8bit": true,
+      "torch_dtype": "float16"
+    },
+    "fgbs": {
+      "beam_width": 3,
+      "alpha": 0.5,
+      "bond_dim": 16,
+      "top_k": 30,
+      "temperature": 1.0,
+      "normalize_embeddings": true
+    },
+    "generation": {
+      "max_length": 256,
+      "min_length": 10,
+      "show_progress": true,
+      "return_details": false
+    },
+    "experiment": {
+      "seed": 42,
+      "eval_batch_size": 1,
+      "num_examples": 10,
+      "save_results": true,
+      "results_dir": "./results",
+      "log_level": "INFO",
+      "log_file": null
+    },
+    "dataset": {
+      "name": "gsm8k",
+      "split": "test",
+      "shuffle": false,
+      "gsm8k": {
+        "prompt_template": "Q: {question}\nA: Let's think step by step.",
+        "extract_answer_regex": "#### (\\d+)"
+      },
+      "strategyqa": {
+        "prompt_template": "Question: {question}\nAnswer (yes/no):",
+        "expected_answers": [
+          "yes",
+          "no"
+        ],
+        "hub_ids": [
+          "wics/strategy-qa",
+          "wics/strategyqa",
+          "strategy_qa"
+        ],
+        "local_path": "data/strategyqa_sample.jsonl"
+      }
+    },
+    "coherence_metrics": {
+      "compute_negation_invariance": true,
+      "compute_transitivity_violations": false,
+      "compute_step_entailment": false,
+      "track_cfs_trajectory": true
+    },
+    "ablation": {
+      "alpha_values": [
+        0.0,
+        0.3,
+        0.5,
+        0.7,
+        1.0
+      ],
+      "bond_dim_values": [
+        4,
+        8,
+        16,
+        32
+      ],
+      "beam_width_values": [
+        1,
+        3,
+        5,
+        10
+      ],
+      "examples_per_config": 100
+    },
+    "baselines": {
+      "compare_greedy": true,
+      "compare_beam_search": true,
+      "compare_self_consistency": false,
+      "self_consistency": {
+        "num_samples": 10,
+        "temperature": 0.7
+      }
+    },
+    "visualization": {
+      "plot_cfs_trajectory": true,
+      "plot_score_trajectory": true,
+      "plot_schmidt_spectrum": false,
+      "figure_size": [
+        10,
+        6
+      ],
+      "style": "seaborn-v0_8",
+      "save_plots": true,
+      "plots_dir": "./plots"
+    },
+    "optimization": {
+      "use_gradient_checkpointing": false,
+      "use_torch_compile": false,
+      "use_mixed_precision": false,
+      "num_threads": 4
+    },
+    "advanced": {
+      "mps": {
+        "svd_truncation_threshold": null,
+        "use_randomized_svd": false
+      },
+      "numerical": {
+        "epsilon": 1e-10,
+        "log_epsilon": 1e-10
+      },
+      "cache": {
+        "cache_embeddings": false,
+        "cache_mps_states": false
+      }
+    }
+  },
+  "timestamp": "2025-11-03T16:42:18.580059"
+}

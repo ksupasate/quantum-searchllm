@@ -1,0 +1,106 @@
+# TNAD Quick Test Configuration
+# Fast testing configuration with minimal examples (10 per benchmark)
+# Use this for rapid prototyping and debugging
+
+# Model Configuration
+model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"  # HuggingFace model identifier
+  # For even faster testing, consider: "microsoft/phi-2" (smaller model)
+  device: "auto"  # "auto", "cuda", "cpu", "mps"
+  load_in_8bit: true  # Use 8-bit quantization for memory efficiency
+  torch_dtype: "float16"  # "float32", "float16", "bfloat16"
+
+# FGBS Algorithm Parameters (Memory-optimized)
+fgbs:
+  beam_width: 3  # Reduced for speed
+  alpha: 0.5  # Balanced
+  bond_dim: 8  # Reduced for speed
+  top_k: 30  # Reduced for speed
+  temperature: 1.0
+  normalize_embeddings: true
+
+# Generation Parameters (Shorter for quick tests)
+generation:
+  max_length: 128  # Reduced from 256 for speed
+  min_length: 10
+  show_progress: true
+  return_details: false
+
+# Experimental Setup (QUICK TEST MODE)
+experiment:
+  seed: 42
+  eval_batch_size: 1
+  num_examples: 10  # Only 10 examples for quick testing
+  save_results: true
+  results_dir: "./results/quick_test"
+  log_level: "INFO"
+  log_file: null
+
+# Dataset Configuration
+dataset:
+  name: "gsm8k"
+  split: "test"
+  shuffle: false
+  gsm8k:
+    prompt_template: "Q: {question}\nA: Let's think step by step."
+    extract_answer_regex: "#### (\\d+)"
+  strategyqa:
+    prompt_template: "Question: {question}\nAnswer (yes/no):"
+    expected_answers: ["yes", "no"]
+    hub_ids:
+      - "wics/strategy-qa"
+      - "wics/strategyqa"
+      - "strategy_qa"
+    local_path: "data/strategyqa_sample.jsonl"
+
+# Coherence Metrics (Minimal for quick test)
+coherence_metrics:
+  compute_negation_invariance: false  # Skip for quick test
+  compute_transitivity_violations: false
+  compute_step_entailment: false
+  track_cfs_trajectory: false  # Skip for quick test
+
+# Ablation Study (Minimal sweep)
+ablation:
+  alpha_values: [0.5]  # Single value for quick test
+  bond_dim_values: [8]
+  beam_width_values: [3]
+  examples_per_config: 10
+
+# Baseline Comparison (Minimal)
+baselines:
+  compare_greedy: true
+  compare_beam_search: true
+  compare_self_consistency: false  # Skip expensive method
+  self_consistency:
+    num_samples: 5  # Reduced from 10
+    temperature: 0.7
+
+# Visualization
+visualization:
+  plot_cfs_trajectory: false  # Skip for quick test
+  plot_score_trajectory: false
+  plot_schmidt_spectrum: false
+  figure_size: [10, 6]
+  style: "seaborn-v0_8"
+  save_plots: false
+  plots_dir: "./plots/quick_test"
+
+# Performance Optimization
+optimization:
+  use_gradient_checkpointing: false
+  use_torch_compile: false
+  use_mixed_precision: false
+  num_threads: 4
+
+# Advanced Settings
+advanced:
+  mps:
+    svd_truncation_threshold: null
+    use_randomized_svd: false
+  numerical:
+    epsilon: 1.0e-10
+    log_epsilon: 1.0e-10
+  cache:
+    cache_embeddings: false
+    cache_mps_states: false
