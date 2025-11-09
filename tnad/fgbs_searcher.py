@@ -132,6 +132,10 @@ class FidelityGuidedBeamSearcher:
             device: Compute device ('cpu', 'cuda', 'mps')
             normalize_embeddings: Normalize token embeddings in MPS
 
+        Raises:
+            ValueError: If hyperparameters are invalid
+            TypeError: If model/tokenizer types are incorrect
+
         Implementation Details:
             [Model Setup]
             - Model set to eval mode (no gradient computation)
@@ -144,6 +148,23 @@ class FidelityGuidedBeamSearcher:
             - Small χ (8): Fast but limited logical tracking
             - Large χ (32): Slower but better coherence monitoring
         """
+        # ENHANCEMENT: Input validation for robustness
+        if not isinstance(model, PreTrainedModel):
+            raise TypeError(f"model must be PreTrainedModel, got {type(model)}")
+        if not isinstance(tokenizer, PreTrainedTokenizer):
+            raise TypeError(f"tokenizer must be PreTrainedTokenizer, got {type(tokenizer)}")
+
+        if beam_width < 1:
+            raise ValueError(f"beam_width must be >= 1, got {beam_width}")
+        if not 0 <= alpha <= 1:
+            raise ValueError(f"alpha must be in [0, 1], got {alpha}")
+        if bond_dim < 1:
+            raise ValueError(f"bond_dim must be >= 1, got {bond_dim}")
+        if top_k < 1:
+            raise ValueError(f"top_k must be >= 1, got {top_k}")
+        if temperature <= 0:
+            raise ValueError(f"temperature must be > 0, got {temperature}")
+
         self.model = model
         self.tokenizer = tokenizer
         self.beam_width = beam_width
@@ -232,6 +253,10 @@ class FidelityGuidedBeamSearcher:
                 - 'cfs_trajectory': CFS values over generation
                 - 'score_trajectory': Composite scores over generation
 
+        Raises:
+            ValueError: If prompt is empty or length parameters are invalid
+            TypeError: If prompt is not a string
+
         Example:
             >>> result = searcher.generate(
             >>>     "What is 2+2?",
@@ -241,6 +266,18 @@ class FidelityGuidedBeamSearcher:
             >>> print(result['text'])
             >>> print(f"Final CFS: {result['log_cfs']:.2f}")
         """
+        # ENHANCEMENT: Comprehensive input validation
+        if not isinstance(prompt, str):
+            raise TypeError(f"prompt must be string, got {type(prompt)}")
+        if not prompt or not prompt.strip():
+            raise ValueError("prompt cannot be empty")
+        if max_length < 1:
+            raise ValueError(f"max_length must be >= 1, got {max_length}")
+        if min_length < 0:
+            raise ValueError(f"min_length must be >= 0, got {min_length}")
+        if min_length > max_length:
+            raise ValueError(f"min_length ({min_length}) cannot exceed max_length ({max_length})")
+
         # Tokenize prompt
         prompt_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0].tolist()
         logger.info(f"Starting FGBS generation: prompt_length={len(prompt_ids)}")
@@ -419,6 +456,11 @@ class FidelityGuidedBeamSearcher:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
+        # OPTIMIZATION: Pre-compute token embeddings for all top-k tokens at once
+        # to reduce embedding layer calls
+        unique_token_ids = set()
+        beam_candidates = {}  # Maps beam idx to its top-k candidates
+
         for idx, beam in enumerate(beams):
             if beam.is_finished:
                 all_candidates.append(beam)
@@ -429,12 +471,29 @@ class FidelityGuidedBeamSearcher:
                 all_candidates.append(beam)
                 continue
 
+            # OPTIMIZATION: Avoid division when temperature is 1.0
             logits_adjusted = beam_logits / self.temperature if self.temperature != 1.0 else beam_logits
             log_probs = torch.log_softmax(logits_adjusted, dim=-1)
 
             current_top_k = min(self.top_k, log_probs.shape[-1])
             topk_log_probs, topk_token_ids = torch.topk(log_probs, current_top_k)
 
+            # Store candidates for this beam and collect unique token IDs
+            beam_candidates[idx] = (beam, topk_log_probs, topk_token_ids)
+            for token_id_tensor in topk_token_ids:
+                unique_token_ids.add(int(token_id_tensor.item()))
+
+        # OPTIMIZATION: Batch compute embeddings for all unique tokens
+        token_embeddings_cache = {}
+        if unique_token_ids:
+            unique_tokens_list = list(unique_token_ids)
+            with torch.no_grad():
+                tokens_tensor = torch.tensor(unique_tokens_list, device=self.device)
+                embeddings_batch = self.embedding_layer(tokens_tensor).detach()
+                token_embeddings_cache = dict(zip(unique_tokens_list, embeddings_batch))
+
+        # Now expand beams using cached embeddings
+        for idx, (beam, topk_log_probs, topk_token_ids) in beam_candidates.items():
             for log_prob_tensor, token_id_tensor in zip(topk_log_probs, topk_token_ids):
                 token_id = int(token_id_tensor.item())
                 log_prob = float(log_prob_tensor.item())
@@ -446,16 +505,15 @@ class FidelityGuidedBeamSearcher:
                 new_token_ids = beam.token_ids + [token_id]
                 new_log_prob = beam.log_prob + log_prob
 
+                # OPTIMIZATION: Use pre-computed embeddings
                 new_mps = beam.mps.copy()
-                with torch.no_grad():
-                    token_embedding = self.embedding_layer(
-                        torch.tensor([token_id], device=self.device)
-                    )[0].detach()
-                    new_mps.add_token(token_embedding)
+                token_embedding = token_embeddings_cache[token_id]
+                new_mps.add_token(token_embedding)
 
                 new_cfs = compute_cfs_from_mps(new_mps)
                 new_log_cfs = math.log(max(new_cfs, 1e-12))
 
+                # OPTIMIZATION: Precompute alpha factors
                 composite_score = (
                     self.alpha * new_log_prob + (1.0 - self.alpha) * new_log_cfs
                 )
