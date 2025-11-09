@@ -29,9 +29,6 @@ import numpy as np
 # Add parent directory to path to import tnad
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Set PyTorch memory allocator to use expandable segments (reduces fragmentation)
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from datasets import Dataset, load_dataset
@@ -575,6 +572,10 @@ def save_results(results: Dict[str, Any], output_path: Path):
 
 def main():
     """Main entry point for StrategyQA experiment."""
+    # Set PyTorch memory allocator to use expandable segments (reduces fragmentation)
+    # This must be set before any CUDA operations
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
     parser = argparse.ArgumentParser(description="Run TNAD on StrategyQA benchmark")
 
     parser.add_argument(

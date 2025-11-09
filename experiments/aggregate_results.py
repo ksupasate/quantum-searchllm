@@ -110,7 +110,8 @@ def main():
                     data = json.load(f)
                     if 'model' in data:
                         models_found.add(data['model'])
-            except:
+            except (json.JSONDecodeError, OSError, KeyError) as e:
+                print(f"Warning: Could not read model from {file}: {e}")
                 continue
 
         if not models_found:

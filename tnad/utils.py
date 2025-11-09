@@ -200,15 +200,25 @@ def setup_logger(log_level: str = "INFO", log_file: Optional[str] = None):
     """
     Configure loguru logger for TNAD framework.
 
+    Note: Only removes handlers if explicitly reconfiguring. Does not affect
+    other loguru handlers to avoid breaking other modules.
+
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
         log_file: Optional file path for log output
     """
-    logger.remove()  # Remove default handler
+    import sys
 
-    # Console handler with color
+    # Only remove handlers that were previously added by this function
+    # by checking if default handler exists
+    try:
+        logger.remove(0)  # Remove only the default handler with ID 0
+    except ValueError:
+        pass  # Default handler already removed or doesn't exist
+
+    # Console handler with color using sys.stdout instead of lambda
     logger.add(
-        lambda msg: print(msg, end=""),
+        sys.stdout,
         colorize=True,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
         level=log_level,

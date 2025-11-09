@@ -271,6 +271,8 @@ class FidelityGuidedBeamSearcher:
             raise TypeError(f"prompt must be string, got {type(prompt)}")
         if not prompt or not prompt.strip():
             raise ValueError("prompt cannot be empty")
+        if len(prompt) > 50000:  # Prevent excessively long prompts
+            raise ValueError(f"Prompt too long: {len(prompt)} characters (max 50000)")
         if max_length < 1:
             raise ValueError(f"max_length must be >= 1, got {max_length}")
         if min_length < 0:
@@ -279,7 +281,10 @@ class FidelityGuidedBeamSearcher:
             raise ValueError(f"min_length ({min_length}) cannot exceed max_length ({max_length})")
 
         # Tokenize prompt
-        prompt_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0].tolist()
+        encoded = self.tokenizer.encode(prompt, return_tensors="pt")
+        if encoded.shape[0] == 0 or encoded.shape[1] == 0:
+            raise ValueError("Tokenizer returned empty sequence for the given prompt")
+        prompt_ids = encoded[0].tolist()
         logger.info(f"Starting FGBS generation: prompt_length={len(prompt_ids)}")
 
         # Initialize beams with prompt
