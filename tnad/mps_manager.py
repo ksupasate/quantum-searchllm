@@ -28,6 +28,7 @@ Implementation sketch:
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -175,7 +176,7 @@ class MPSSequence:
         self.tensors: List[torch.Tensor] = []
         self._latent_states: List[torch.Tensor] = []
         self._embeddings: List[torch.Tensor] = []
-        self._schmidt_cache: Dict[int, np.ndarray] = {}
+        self._schmidt_cache: OrderedDict = OrderedDict()  # True LRU cache
         self._current_right_bond_dim: int = 1
 
         logger.debug(
@@ -326,6 +327,8 @@ class MPSSequence:
         cache_key = (cut_position, num_tokens)
         cached = self._schmidt_cache.get(cache_key)
         if cached is not None:
+            # Move to end for LRU tracking (most recently used)
+            self._schmidt_cache.move_to_end(cache_key)
             return cached
 
         # OPTIMIZATION: Reuse pre-stacked tensors if available
@@ -366,11 +369,12 @@ class MPSSequence:
         # OPTIMIZATION: Enhanced LRU cache with size limit
         MAX_SCHMIDT_CACHE_SIZE = 30  # Increased for better hit rate in beam search
         if len(self._schmidt_cache) >= MAX_SCHMIDT_CACHE_SIZE:
-            # Remove oldest entry (FIFO eviction for simplicity)
-            oldest_key = next(iter(self._schmidt_cache))
-            del self._schmidt_cache[oldest_key]
+            # Remove least recently used entry (proper LRU eviction)
+            self._schmidt_cache.popitem(last=False)  # FIFO=False means LRU
 
         self._schmidt_cache[cache_key] = schmidt
+        # Mark as most recently used
+        self._schmidt_cache.move_to_end(cache_key)
         return schmidt
 
     # --------------------------------------------------------------------- #
