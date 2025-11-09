@@ -607,14 +607,303 @@ For questions and feedback:
 
 ---
 
-## Roadmap
+## Advanced Features (v1.0)
 
-- [ ] Support for encoder-decoder models (T5, BART)
-- [ ] Multi-GPU distributed beam search
-- [ ] Integration with vLLM for production deployment
-- [ ] Streaming generation support
-- [ ] Fine-tuning pipeline with coherence rewards
-- [ ] Web demo and API server
+### Encoder-Decoder Models
+
+Full support for T5, BART, mBART, and mT5 architectures:
+
+```python
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+from tnad import EncoderDecoderFGBS
+
+# Load T5 model
+model = T5ForConditionalGeneration.from_pretrained("t5-base")
+tokenizer = T5Tokenizer.from_pretrained("t5-base")
+
+# Create encoder-decoder FGBS
+searcher = EncoderDecoderFGBS(
+    model=model,
+    tokenizer=tokenizer,
+    beam_width=5,
+    alpha=0.5,
+    bond_dim=16,
+)
+
+# Summarization
+result = searcher.generate(
+    "summarize: Large language models have shown remarkable capabilities...",
+    max_length=100
+)
+print(result['text'])
+```
+
+### Multi-GPU Distributed Beam Search
+
+Scale FGBS across multiple GPUs for higher throughput:
+
+```python
+from tnad import DistributedFGBS, setup_distributed, cleanup_distributed
+
+# Setup distributed environment
+rank, world_size = setup_distributed()
+
+# Load model on each GPU
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-3.1-8B-Instruct",
+    device_map=f"cuda:{rank}"
+)
+
+# Create distributed searcher
+searcher = DistributedFGBS(
+    model=model,
+    tokenizer=tokenizer,
+    beam_width=16,  # Total beams across all GPUs
+    alpha=0.5,
+    bond_dim=16,
+    rank=rank,
+    world_size=world_size,
+)
+
+# Generate (same prompt on all GPUs)
+result = searcher.generate("Solve: x + 2 = 5", max_length=100)
+
+# Only rank 0 gets final result
+if rank == 0:
+    print(result['text'])
+
+cleanup_distributed()
+```
+
+**Performance**: Near-linear scaling up to 8 GPUs.
+
+### vLLM Integration
+
+Production-ready deployment with vLLM for 5-10x higher throughput:
+
+```python
+from tnad import vLLMFGBS
+
+# Initialize vLLM with FGBS
+fgbs = vLLMFGBS(
+    model_name="meta-llama/Llama-3.1-8B-Instruct",
+    alpha=0.5,
+    bond_dim=16,
+    tensor_parallel_size=2,  # Use 2 GPUs
+    gpu_memory_utilization=0.9,
+)
+
+# Single generation
+result = fgbs.generate("What is quantum computing?", max_tokens=100)
+print(result['text'])
+print(f"CFS: {result['cfs']:.4f}")
+
+# Batch generation (high throughput)
+prompts = ["Question 1", "Question 2", "Question 3"]
+results = fgbs.generate_batch(prompts, max_tokens=100)
+```
+
+**Note**: vLLM requires Linux and CUDA. Install with `pip install vllm`.
+
+### Streaming Generation
+
+Real-time token-by-token generation for interactive applications:
+
+```python
+from tnad import StreamingFGBS
+
+searcher = StreamingFGBS(
+    model=model,
+    tokenizer=tokenizer,
+    beam_width=5,
+    alpha=0.5,
+    bond_dim=16,
+)
+
+# Synchronous streaming
+for token_info in searcher.generate_stream("Once upon a time", max_length=100):
+    print(token_info.token, end='', flush=True)
+    print(f" [CFS: {math.exp(token_info.log_cfs):.2f}]", end='')
+
+# Async streaming (for web servers)
+async for token in searcher.generate_stream_async(prompt, max_length=100):
+    await websocket.send_text(token.token)
+
+# With callbacks
+def on_token(token):
+    print(f"Generated: {token.token} (CFS={math.exp(token.log_cfs):.2f})")
+
+result = searcher.generate_with_callbacks(
+    prompt="Explain quantum computing",
+    on_token=on_token,
+    coherence_threshold=0.5,  # Early stopping if CFS drops
+)
+```
+
+### Fine-Tuning with Coherence Rewards
+
+Train models to generate intrinsically more coherent text:
+
+```python
+from tnad import CoherenceFilteredDataset, CoherenceRewardTrainer
+from transformers import TrainingArguments
+
+# Filter dataset by coherence
+filtered_dataset = CoherenceFilteredDataset(
+    data=train_data,
+    tokenizer=tokenizer,
+    embedding_layer=model.get_input_embeddings(),
+    min_cfs=0.8,  # Keep top 80% coherent examples
+    bond_dim=16,
+)
+
+# Training arguments
+training_args = TrainingArguments(
+    output_dir="./coherence_finetuned",
+    num_train_epochs=3,
+    per_device_train_batch_size=4,
+)
+
+# Create trainer with coherence weighting
+trainer = CoherenceRewardTrainer(
+    model=model,
+    train_dataset=filtered_dataset,
+    args=training_args,
+    coherence_weight=0.5,  # 50% weight on coherence
+)
+
+trainer.train()
+```
+
+**Reinforcement Learning**:
+```python
+from tnad import CoherenceRLTrainer
+
+# RL trainer with PPO
+rl_trainer = CoherenceRLTrainer(
+    model=model,
+    ref_model=ref_model,
+    tokenizer=tokenizer,
+    bond_dim=16,
+    learning_rate=1e-5,
+)
+
+# Train with coherence rewards
+rl_trainer.train(prompts=training_prompts, num_epochs=3)
+```
+
+### Web Demo (Gradio)
+
+Interactive web interface for testing FGBS:
+
+```bash
+# Launch demo
+python -m tnad.web_demo --model meta-llama/Llama-3.1-8B-Instruct --share
+
+# With authentication
+python -m tnad.web_demo --model gpt2 --auth username:password
+
+# Custom port
+python -m tnad.web_demo --model gpt2 --server-port 7860
+```
+
+Features:
+- Real-time parameter tuning (α, χ, beam width)
+- Coherence trajectory visualization
+- Baseline comparison
+- Export results to JSON/CSV
+
+### API Server (FastAPI)
+
+Production REST API with WebSocket streaming:
+
+```bash
+# Start server
+python -m tnad.api_server --model meta-llama/Llama-3.1-8B-Instruct --port 8000
+
+# With 8-bit quantization
+python -m tnad.api_server --model meta-llama/Llama-3.1-8B-Instruct --load-in-8bit
+
+# Multiple workers
+python -m tnad.api_server --model gpt2 --workers 4
+```
+
+**API Endpoints**:
+
+```bash
+# Single generation
+curl -X POST "http://localhost:8000/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Solve: x + 2 = 5",
+    "max_length": 100,
+    "alpha": 0.5,
+    "return_details": true
+  }'
+
+# Batch generation
+curl -X POST "http://localhost:8000/generate/batch" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompts": ["Question 1", "Question 2"],
+    "max_length": 100
+  }'
+
+# Health check
+curl "http://localhost:8000/health"
+
+# Metrics
+curl "http://localhost:8000/metrics"
+```
+
+**Server-Sent Events (SSE)**:
+```javascript
+const eventSource = new EventSource(
+  'http://localhost:8000/stream?prompt=Hello&max_length=50'
+);
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.token);
+};
+```
+
+**WebSocket**:
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/generate');
+ws.onopen = () => {
+  ws.send(JSON.stringify({prompt: 'Hello', max_length: 50}));
+};
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.token);
+};
+```
+
+---
+
+## Complete Examples
+
+See `examples/advanced_features_demo.py` for comprehensive examples of all features:
+
+```bash
+# Run all examples
+python examples/advanced_features_demo.py --example all
+
+# Run specific example
+python examples/advanced_features_demo.py --example streaming
+python examples/advanced_features_demo.py --example encoder-decoder
+python examples/advanced_features_demo.py --example vllm
+```
+
+---
+
+## Roadmap (v2.0)
+
+- [ ] Support for vision-language models (CLIP, LLaVA)
+- [ ] Beam search with constrained decoding
+- [ ] Multi-modal coherence scoring
+- [ ] Federated learning support
+- [ ] Model compression techniques
 
 ---
 

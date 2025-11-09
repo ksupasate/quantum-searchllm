@@ -18,6 +18,7 @@ pyyaml>=6.0,<7.0
 # Testing Framework
 pytest>=7.4.0,<8.0.0
 pytest-cov>=4.1.0,<5.0.0
+pytest-asyncio>=0.21.0,<1.0.0  # For async tests
 
 # Data Processing
 datasets>=2.14.0,<3.0.0
@@ -41,8 +42,38 @@ mypy>=1.4.0,<2.0.0
 # Table Formatting (for publication-ready tables)
 tabulate>=0.9.0,<1.0.0  # For markdown/LaTeX table generation
 
+# ============================================================================
+# Extended Features (v1.0)
+# ============================================================================
+
+# Web API & Streaming
+fastapi>=0.104.0,<1.0.0  # REST API server
+uvicorn[standard]>=0.24.0,<1.0.0  # ASGI server
+pydantic>=2.0.0,<3.0.0  # Request/response validation
+python-multipart>=0.0.6  # For file uploads
+websockets>=12.0,<13.0  # WebSocket support
+
+# Web Demo
+gradio>=4.0.0,<5.0.0  # Interactive web interface
+
+# Distributed Training
+torch-distributed>=0.1.0  # Distributed utilities (bundled with PyTorch)
+
+# vLLM Integration (Optional - Linux + CUDA only)
+# Note: vLLM requires Linux and CUDA. Uncomment if deploying on compatible systems.
+# vllm>=0.2.0,<1.0.0  # High-performance inference engine
+
+# Fine-tuning & RL
+# trl>=0.7.0,<1.0.0  # Transformer Reinforcement Learning (optional)
+
+# Monitoring & Metrics
+# prometheus-client>=0.19.0,<1.0.0  # Prometheus metrics (optional)
+
 # Optional: GPU Monitoring (useful for resource tracking)
 # pynvml>=11.5.0  # Uncomment for GPU monitoring
 
 # Optional: Weights & Biases (for experiment tracking)
 # wandb>=0.15.0  # Uncomment for W&B integration
+
+# Optional: Ray for advanced distributed computing
+# ray>=2.8.0,<3.0.0  # Uncomment for Ray integration
