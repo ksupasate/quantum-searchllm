@@ -555,9 +555,9 @@ If you use TNAD in your research, please cite:
 ```bibtex
 @software{tnad2024,
   title={TNAD: Tensor Network-Augmented Decoding for Coherent LLM Reasoning},
-  author={AI Research Team},
-  year={2024},
-  url={https://github.com/yourusername/quantum-search-llm}
+  author={Supasate Vorathammathorn},
+  year={2025},
+  url={https://github.com/ksupasate/quantum-search-llm}
 }
 ```
 
@@ -603,7 +603,7 @@ mypy tnad/
 
 For questions and feedback:
 - Open an issue on GitHub
-- Email: research@example.com
+- Email: ksupasate@gmail.com
 
 ---
 
