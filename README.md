@@ -74,8 +74,8 @@ Low F → peaked spectrum → low entanglement → decoherent state
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/quantum-search-llm.git
-cd quantum-search-llm
+git clone https://github.com/ksupasate/TNAD-TensorNetwork-Decoding.git
+cd TNAD-TensorNetwork-Decoding
 
 # Install dependencies
 pip install -r requirements.txt
@@ -390,7 +390,7 @@ from tnad.utils import (
 ## Project Structure
 
 ```
-quantum-searchllm/
+TNAD-TensorNetwork-Decoding/
 ├── tnad/                       # Core package
 │   ├── __init__.py            # Package exports
 │   ├── fgbs_searcher.py       # FGBS implementation
@@ -557,7 +557,7 @@ If you use TNAD in your research, please cite:
   title={TNAD: Tensor Network-Augmented Decoding for Coherent LLM Reasoning},
   author={Supasate Vorathammathorn},
   year={2025},
-  url={https://github.com/ksupasate/quantum-search-llm}
+  url={https://github.com/ksupasate/TNAD-TensorNetwork-Decoding}
 }
 ```
 
