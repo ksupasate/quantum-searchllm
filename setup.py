@@ -14,16 +14,16 @@ if readme_path.exists():
 
 setup(
     name="tnad",
-    version="0.1.0",
-    author="AI Research Team",
-    author_email="research@example.com",
+    version="1.0.0",
+    author="Supasate Vorathammathorn",
+    author_email="ksupasate@gmail.com",
     description="Tensor Network-Augmented Decoding: Quantum-inspired inference for LLM coherence",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/quantum-search-llm",
+    url="https://github.com/ksupasate/TNAD-TensorNetwork-Decoding",
     packages=find_packages(exclude=["tests", "experiments", "notebooks"]),
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "License :: OSI Approved :: MIT License",

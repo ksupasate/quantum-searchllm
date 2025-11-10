@@ -1,5 +1,80 @@
-*.md
-*.docx
-*.pdf
+# Python
 __pycache__/
-.claude
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyTorch
+*.pt
+*.pth
+*.ckpt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data and Models (too large for git)
+data/*.csv
+data/*.json
+!data/strategyqa_sample.jsonl
+models/
+checkpoints/
+*.bin
+*.safetensors
+
+# Results and Logs
+results/*.json
+results/*.csv
+results/*.png
+!results/experiment_manifest.json
+logs/
+*.log
+
+# Documentation build artifacts
+docs/_build/
+docs/.doctrees/
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Claude Code
+.claude/
